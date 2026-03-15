@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "AI agent-based journaling app for cultivating mindfulness and well-being"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.40.0",
+    "claude-agent-sdk",
     "line-bot-sdk>=3.0",
     "pydantic-settings>=2.0",
     "fastapi>=0.115",
@@ -46,3 +46,4 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
