@@ -38,7 +38,7 @@ async def _respond_to_user(
     access_token: str,
 ) -> None:
     """Background task: generate AI response and push to LINE."""
-    response = responder.generate_response(user_id, user_text)
+    response = await responder.generate_response(user_id, user_text)
     configuration = Configuration(access_token=access_token)
     async with AsyncApiClient(configuration) as api_client:
         line_api = AsyncMessagingApi(api_client)
@@ -60,7 +60,6 @@ def create_app(settings: Settings) -> FastAPI:
     user_repository = JsonUserRepository(settings.storage_dir)
     inbox_repository = JsonInboxRepository(settings.storage_dir)
     responder = AiResponder(
-        api_key=settings.anthropic_api_key,
         storage_dir=settings.storage_dir,
     )
 

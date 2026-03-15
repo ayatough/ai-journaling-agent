@@ -3,82 +3,107 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+
+class _TextBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _AssistantMessage:
+    def __init__(self, text: str) -> None:
+        self.content = [_TextBlock(text)]
+
+
+class _ResultMessage:
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+
+
+def _make_query(assistant_text: str, session_id: str):  # type: ignore[return]
+    async def _mock_query(**kwargs):  # type: ignore[return]
+        yield _AssistantMessage(assistant_text)
+        yield _ResultMessage(session_id)
+
+    return _mock_query
+
+
+def _patch_sdk(assistant_text: str = "お疲れ様でした！", session_id: str = "sid-001"):
+    return (
+        patch("ai_journaling_agent.core.ai_responder.query", _make_query(assistant_text, session_id)),
+        patch("ai_journaling_agent.core.ai_responder.AssistantMessage", _AssistantMessage),
+        patch("ai_journaling_agent.core.ai_responder.ResultMessage", _ResultMessage),
+        patch("ai_journaling_agent.core.ai_responder.TextBlock", _TextBlock),
+    )
 
 
 class TestGenerateResponse:
-    """generate_response() calls history then API."""
+    """generate_response() returns text and saves session_id."""
 
-    def test_returns_api_text(self, tmp_path: Path) -> None:
+    async def test_returns_assistant_text(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder
 
-        mock_client = MagicMock()
-        mock_content = MagicMock()
-        mock_content.text = "お疲れ様でした！"
-        mock_client.messages.create.return_value.content = [mock_content]
-
-        with patch("ai_journaling_agent.core.ai_responder.Anthropic", return_value=mock_client):
-            responder = AiResponder(api_key="test-key", storage_dir=tmp_path / "data")
-
-        with patch.object(responder, "_get_history", return_value="(履歴なし)"):
-            result = responder.generate_response("U1234", "今日は疲れた")
+        q_patch, am_patch, rm_patch, tb_patch = _patch_sdk("お疲れ様でした！", "sid-001")
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=tmp_path / "data")
+            result = await responder.generate_response("U1234", "今日は疲れた")
 
         assert result == "お疲れ様でした！"
-        mock_client.messages.create.assert_called_once()
 
-    def test_history_included_in_api_call(self, tmp_path: Path) -> None:
+    async def test_saves_session_id_after_response(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder
 
-        mock_client = MagicMock()
-        mock_content = MagicMock()
-        mock_content.text = "返答"
-        mock_client.messages.create.return_value.content = [mock_content]
+        q_patch, am_patch, rm_patch, tb_patch = _patch_sdk("返答", "sid-abc")
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=tmp_path / "data")
+            await responder.generate_response("U1234", "テスト")
 
-        with patch("ai_journaling_agent.core.ai_responder.Anthropic", return_value=mock_client):
-            responder = AiResponder(api_key="test-key", storage_dir=tmp_path / "data")
+        session_file = tmp_path / "data" / "sessions" / "U1234.txt"
+        assert session_file.exists()
+        assert session_file.read_text().strip() == "sid-abc"
 
-        history = "2026-03-14: 良い日だった"
-        with patch.object(responder, "_get_history", return_value=history):
-            responder.generate_response("U1234", "今日は？")
-
-        call_kwargs = mock_client.messages.create.call_args
-        content = call_kwargs[1]["messages"][0]["content"]
-        assert history in content
-        assert "今日は？" in content
-
-
-class TestGetHistory:
-    """_get_history() calls journal-history subprocess."""
-
-    def test_calls_subprocess_with_user_and_days(self, tmp_path: Path) -> None:
+    async def test_loads_existing_session_id(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder
 
         storage_dir = tmp_path / "data"
-        with patch("ai_journaling_agent.core.ai_responder.Anthropic"):
-            responder = AiResponder(api_key="test-key", storage_dir=storage_dir)
+        sessions_dir = storage_dir / "sessions"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "U1234.txt").write_text("existing-sid")
 
-        mock_result = MagicMock()
-        mock_result.stdout = "some history"
-        with patch("ai_journaling_agent.core.ai_responder.subprocess.run", return_value=mock_result) as mock_run:
-            result = responder._get_history("U5678")
+        captured_options: list = []
 
-        assert result == "some history"
-        mock_run.assert_called_once_with(
-            ["uv", "run", "journal-history", "--user", "U5678", "--days", "3"],
-            capture_output=True,
-            text=True,
-            cwd=tmp_path,
+        async def mock_query(prompt: str, options):  # type: ignore[return]
+            captured_options.append(options)
+            yield _AssistantMessage("返答")
+            yield _ResultMessage("new-sid")
+
+        q_patch, am_patch, rm_patch, tb_patch = (
+            patch("ai_journaling_agent.core.ai_responder.query", mock_query),
+            patch("ai_journaling_agent.core.ai_responder.AssistantMessage", _AssistantMessage),
+            patch("ai_journaling_agent.core.ai_responder.ResultMessage", _ResultMessage),
+            patch("ai_journaling_agent.core.ai_responder.TextBlock", _TextBlock),
         )
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=storage_dir)
+            await responder.generate_response("U1234", "こんにちは")
 
-    def test_returns_fallback_when_no_output(self, tmp_path: Path) -> None:
+        assert captured_options[0].resume == "existing-sid"
+
+    async def test_returns_fallback_when_no_text(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder
 
-        with patch("ai_journaling_agent.core.ai_responder.Anthropic"):
-            responder = AiResponder(api_key="test-key", storage_dir=tmp_path / "data")
+        async def mock_query(**kwargs):  # type: ignore[return]
+            yield _ResultMessage("sid-xyz")
 
-        mock_result = MagicMock()
-        mock_result.stdout = ""
-        with patch("ai_journaling_agent.core.ai_responder.subprocess.run", return_value=mock_result):
-            result = responder._get_history("U0000")
+        q_patch, am_patch, rm_patch, tb_patch = (
+            patch("ai_journaling_agent.core.ai_responder.query", mock_query),
+            patch("ai_journaling_agent.core.ai_responder.AssistantMessage", _AssistantMessage),
+            patch("ai_journaling_agent.core.ai_responder.ResultMessage", _ResultMessage),
+            patch("ai_journaling_agent.core.ai_responder.TextBlock", _TextBlock),
+        )
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=tmp_path / "data")
+            result = await responder.generate_response("U1234", "テスト")
 
-        assert result == "(履歴なし)"
+        assert result == "(応答なし)"
