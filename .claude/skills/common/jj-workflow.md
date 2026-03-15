@@ -17,3 +17,4 @@ jj git push                # リモートにプッシュ
 - `git` コマンドは直接使わない。`jj` 経由で操作する
 - `jj new` で作業を始め、`jj describe` で完了を記録
 - outputs/ はjj管理外（.gitignoreで除外済み）
+- `remotes.origin.auto-track-bookmarks = "glob:*"` を設定済み。`jj git push` で新規ブックマークも自動トラッキングされるため、`--allow-new` フラグは不要
