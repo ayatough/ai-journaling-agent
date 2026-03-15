@@ -37,8 +37,10 @@ def _make_message_event(user_id: str, text: str) -> MagicMock:
     return event
 
 
-def _make_follow_event() -> MagicMock:
+def _make_follow_event(user_id: str = "U0000") -> MagicMock:
     event = MagicMock(spec=FollowEvent)
+    event.source = MagicMock(spec=Source)
+    event.source.user_id = user_id
     event.reply_token = "test-reply-token"
     return event
 
