@@ -19,6 +19,7 @@ from ai_journaling_agent.adapters.line.handlers import (
     handle_message_event,
     handle_unfollow_event,
 )
+from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.user import JsonUserRepository, UserState
 
 
@@ -129,9 +130,10 @@ class TestMessageUpdatesInteraction:
         old_time = datetime(2026, 3, 14, 9, 0, 0, tzinfo=UTC)
         user_repo.save(UserState("U1234", True, old_time, old_time))
 
+        inbox_repo = JsonInboxRepository(path)
         line_api = AsyncMock()
         event = _make_message_event("U1234", "今日は良い日")
-        await handle_message_event(event, line_api, journal_repo, user_repo)
+        await handle_message_event(event, line_api, journal_repo, user_repo, inbox_repo)
 
         state = user_repo.get("U1234")
         assert state is not None

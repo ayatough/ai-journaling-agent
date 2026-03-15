@@ -19,6 +19,12 @@ dev = [
     "pytest-asyncio>=0.25",
 ]
 
+[project.scripts]
+inbox = "ai_journaling_agent.cli.inbox_cmd:main"
+push-line = "ai_journaling_agent.cli.push_cmd:main"
+journal-history = "ai_journaling_agent.cli.history_cmd:main"
+checkin = "ai_journaling_agent.cli.checkin_cmd:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

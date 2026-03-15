@@ -12,11 +12,10 @@ from linebot.v3.messaging import (  # type: ignore[import-untyped]
 from linebot.v3.webhooks import FollowEvent, MessageEvent, UnfollowEvent  # type: ignore[import-untyped]
 
 from ai_journaling_agent.core.classifier import classify_message, parse_structured_entry
+from ai_journaling_agent.core.inbox import InboxMessage, InboxRepository, generate_message_id
 from ai_journaling_agent.core.journal import EntryLevel, JournalEntry
 from ai_journaling_agent.core.prompts import WELCOME_BACK
 from ai_journaling_agent.core.repository import JournalRepository
-from ai_journaling_agent.core.responses import generate_response
-from ai_journaling_agent.core.scheduler import get_check_in_prompt
 from ai_journaling_agent.core.user import UserRepository, UserState
 
 
@@ -25,11 +24,12 @@ async def handle_message_event(
     line_api: AsyncMessagingApi,
     repository: JournalRepository,
     user_repository: UserRepository,
+    inbox_repository: InboxRepository,
 ) -> None:
     """Handle incoming text messages.
 
-    Classifies the message, creates a journal entry, and replies.
-    Appends a check-in prompt when the time of day matches.
+    Saves the message to the inbox and journal, but does not reply.
+    AI responses are sent later by the Claude Code /loop process via push API.
     """
     user_id: str = event.source.user_id
     text: str = event.message.text
@@ -41,6 +41,7 @@ async def handle_message_event(
         user_state.last_interaction = now
         user_repository.save(user_state)
 
+    # Classify and save journal entry
     level = classify_message(text)
 
     if level == EntryLevel.STRUCTURED:
@@ -68,18 +69,17 @@ async def handle_message_event(
 
     repository.save(user_id, entry)
 
-    reply_text = generate_response(entry)
-
-    check_in = get_check_in_prompt(now.hour)
-    if check_in:
-        reply_text += "\n\n" + check_in
-
-    await line_api.reply_message(
-        ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text=reply_text)],
-        )
+    # Save to inbox for async AI processing
+    inbox_msg = InboxMessage(
+        id=generate_message_id(now),
+        user_id=user_id,
+        text=text,
+        received_at=now,
+        status="pending",
     )
+    inbox_repository.save(inbox_msg)
+
+    # No LINE reply — AI response will be sent via push API by /loop
 
 
 async def handle_follow_event(

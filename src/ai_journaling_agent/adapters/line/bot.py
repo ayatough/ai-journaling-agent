@@ -23,6 +23,7 @@ from ai_journaling_agent.adapters.line.handlers import (
     handle_unfollow_event,
 )
 from ai_journaling_agent.core.config import Settings
+from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.repository import JsonJournalRepository
 from ai_journaling_agent.core.user import JsonUserRepository
 
@@ -35,6 +36,7 @@ def create_app(settings: Settings) -> FastAPI:
     configuration = Configuration(access_token=settings.line_channel_access_token)
     repository = JsonJournalRepository(settings.storage_dir)
     user_repository = JsonUserRepository(settings.storage_dir)
+    inbox_repository = JsonInboxRepository(settings.storage_dir)
 
     @app.post("/callback")
     async def callback(request: Request) -> dict[str, str]:
@@ -53,7 +55,8 @@ def create_app(settings: Settings) -> FastAPI:
                     event.message, TextMessageContent
                 ):
                     await handle_message_event(
-                        event, line_api, repository, user_repository
+                        event, line_api, repository, user_repository,
+                        inbox_repository,
                     )
                 elif isinstance(event, FollowEvent):
                     await handle_follow_event(event, line_api, user_repository)
