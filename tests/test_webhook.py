@@ -52,7 +52,10 @@ def _create_test_client(tmp_path: Path, events: list[object]) -> TestClient:
 
     settings = _make_settings(tmp_path)
 
-    with patch("ai_journaling_agent.adapters.line.bot.WebhookParser") as mock_parser_cls:
+    with (
+        patch("ai_journaling_agent.adapters.line.bot.WebhookParser") as mock_parser_cls,
+        patch("ai_journaling_agent.adapters.line.bot.AiResponder"),
+    ):
         mock_parser_cls.return_value.parse.return_value = events
         app = create_app(settings)
 
@@ -96,14 +99,16 @@ class TestSignatureVerification:
 class TestMessageEvent:
     """Text message handling — saves to journal and inbox, no reply."""
 
+    @patch("ai_journaling_agent.adapters.line.bot._respond_to_user")
     @patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient")
     def test_text_message_creates_entry_and_inbox(
-        self, mock_client_cls: MagicMock, tmp_path: Path
+        self, mock_client_cls: MagicMock, mock_respond: MagicMock, tmp_path: Path
     ) -> None:
         mock_api = AsyncMock()
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = mock_api
         mock_client_cls.return_value = mock_ctx
+        mock_respond.return_value = AsyncMock()
 
         with patch("ai_journaling_agent.adapters.line.bot.AsyncMessagingApi") as mock_api_cls:
             mock_line_api = AsyncMock()
@@ -135,13 +140,15 @@ class TestMessageEvent:
         assert pending[0].user_id == "U1234"
         assert pending[0].text == "今日は良い日"
 
+    @patch("ai_journaling_agent.adapters.line.bot._respond_to_user")
     @patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient")
     def test_emoji_stored_as_emoji_level(
-        self, mock_client_cls: MagicMock, tmp_path: Path
+        self, mock_client_cls: MagicMock, mock_respond: MagicMock, tmp_path: Path
     ) -> None:
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = AsyncMock()
         mock_client_cls.return_value = mock_ctx
+        mock_respond.return_value = AsyncMock()
 
         with patch("ai_journaling_agent.adapters.line.bot.AsyncMessagingApi") as mock_api_cls:
             mock_api_cls.return_value = AsyncMock()
