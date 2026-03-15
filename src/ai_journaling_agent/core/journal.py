@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
-from typing import Optional
+from typing import Any
 
 
 class EntryLevel(IntEnum):
@@ -22,9 +22,36 @@ class JournalEntry:
 
     timestamp: datetime
     level: EntryLevel
-    emoji: Optional[str] = None
-    summary: Optional[str] = None
+    emoji: str | None = None
+    summary: str | None = None
     achievements: list[str] = field(default_factory=list)
     gratitude: list[str] = field(default_factory=list)
     learnings: list[str] = field(default_factory=list)
     photo_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize to a JSON-compatible dictionary."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "level": int(self.level),
+            "emoji": self.emoji,
+            "summary": self.summary,
+            "achievements": self.achievements,
+            "gratitude": self.gratitude,
+            "learnings": self.learnings,
+            "photo_paths": self.photo_paths,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> JournalEntry:
+        """Deserialize from a dictionary."""
+        return cls(
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            level=EntryLevel(data["level"]),
+            emoji=data.get("emoji"),
+            summary=data.get("summary"),
+            achievements=list(data.get("achievements") or []),
+            gratitude=list(data.get("gratitude") or []),
+            learnings=list(data.get("learnings") or []),
+            photo_paths=list(data.get("photo_paths") or []),
+        )
