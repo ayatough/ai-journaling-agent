@@ -15,6 +15,7 @@ from linebot.v3.webhooks import (  # type: ignore[import-untyped]
 )
 
 from ai_journaling_agent.core.config import Settings
+from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.prompts import WELCOME_BACK
 from ai_journaling_agent.core.repository import JsonJournalRepository
 
@@ -93,10 +94,10 @@ class TestSignatureVerification:
 
 
 class TestMessageEvent:
-    """Text message handling."""
+    """Text message handling — saves to journal and inbox, no reply."""
 
     @patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient")
-    def test_text_message_creates_entry_and_replies(
+    def test_text_message_creates_entry_and_inbox(
         self, mock_client_cls: MagicMock, tmp_path: Path
     ) -> None:
         mock_api = AsyncMock()
@@ -118,12 +119,21 @@ class TestMessageEvent:
             )
 
         assert response.status_code == 200
-        mock_line_api.reply_message.assert_called_once()
+        # No reply sent (AI responds later via push)
+        mock_line_api.reply_message.assert_not_called()
 
+        # Journal entry saved
         repo = JsonJournalRepository(tmp_path)
         entries = repo.list_entries("U1234")
         assert len(entries) == 1
         assert entries[0].summary == "今日は良い日"
+
+        # Inbox message saved
+        inbox_repo = JsonInboxRepository(tmp_path)
+        pending = inbox_repo.list_pending()
+        assert len(pending) == 1
+        assert pending[0].user_id == "U1234"
+        assert pending[0].text == "今日は良い日"
 
     @patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient")
     def test_emoji_stored_as_emoji_level(
