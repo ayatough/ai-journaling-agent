@@ -5,6 +5,7 @@ description = "AI agent-based journaling app for cultivating mindfulness and wel
 requires-python = ">=3.12"
 dependencies = [
     "line-bot-sdk>=3.0",
+    "pydantic-settings>=2.0",
 ]
 
 [dependency-groups]

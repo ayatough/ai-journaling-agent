@@ -5,6 +5,9 @@ __pycache__/
 dist/
 build/
 .venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # outputs（jj管理外）
 outputs/
@@ -16,6 +19,7 @@ outputs/
 # Environment
 .env
 .env.*
+!.env.example
 
 # OS
 .DS_Store
