@@ -17,7 +17,7 @@ class TestSettingsRequired:
         monkeypatch.delenv("LINE_CHANNEL_SECRET", raising=False)
         monkeypatch.delenv("LINE_CHANNEL_ACCESS_TOKEN", raising=False)
         with pytest.raises(ValidationError):
-            Settings()  # type: ignore[call-arg]
+            Settings(_env_file=None)  # type: ignore[call-arg]
 
     def test_valid_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "test-secret")
