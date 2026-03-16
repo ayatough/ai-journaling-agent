@@ -90,6 +90,32 @@ class TestGenerateResponse:
 
         assert captured_options[0].resume == "existing-sid"
 
+    async def test_checkin_prompt_is_prepended_to_user_text(self, tmp_path: Path) -> None:
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        captured_prompts: list[str] = []
+
+        async def mock_query(prompt: str, options):  # type: ignore[return]
+            captured_prompts.append(prompt)
+            yield _AssistantMessage("朝のチェックイン返答")
+            yield _ResultMessage("sid-morning")
+
+        q_patch, am_patch, rm_patch, tb_patch = (
+            patch("ai_journaling_agent.core.ai_responder.query", mock_query),
+            patch("ai_journaling_agent.core.ai_responder.AssistantMessage", _AssistantMessage),
+            patch("ai_journaling_agent.core.ai_responder.ResultMessage", _ResultMessage),
+            patch("ai_journaling_agent.core.ai_responder.TextBlock", _TextBlock),
+        )
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=tmp_path / "data")
+            result = await responder.generate_response(
+                "U1234", "🥱", checkin_prompt="今朝の気分を絵文字ひとつで教えてください"
+            )
+
+        assert result == "朝のチェックイン返答"
+        assert "今朝の気分を絵文字ひとつで教えてください" in captured_prompts[0]
+        assert "🥱" in captured_prompts[0]
+
     async def test_returns_fallback_when_no_text(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder
 

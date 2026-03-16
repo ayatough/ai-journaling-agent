@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -60,3 +60,22 @@ class CheckInTracker:
         data = self._load()
         data[f"last_{kind}_checkin"] = today.isoformat()
         self._save(data)
+
+    def record_sent_prompt(self, prompt_text: str, sent_at: datetime) -> None:
+        """Record the text of the check-in prompt that was sent."""
+        data = self._load()
+        data["last_sent_prompt"] = prompt_text
+        data["last_sent_at"] = sent_at.isoformat()
+        self._save(data)
+
+    def get_recent_prompt(self, within_hours: int = 8) -> str | None:
+        """Return the prompt text if sent within the given number of hours."""
+        data = self._load()
+        prompt = data.get("last_sent_prompt")
+        sent_at_str = data.get("last_sent_at")
+        if not prompt or not sent_at_str:
+            return None
+        sent_at = datetime.fromisoformat(sent_at_str)
+        if (datetime.now(tz=UTC) - sent_at).total_seconds() < within_hours * 3600:
+            return prompt
+        return None
