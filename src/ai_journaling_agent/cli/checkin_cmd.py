@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> None:
 
     record = sub.add_parser("record", help="Record that a check-in was sent")
     record.add_argument("--kind", required=True, choices=["morning", "evening"])
+    record.add_argument("--text", default=None, help="The prompt text that was sent (optional)")
 
     args = parser.parse_args(argv)
     settings = Settings()  # type: ignore[call-arg]
@@ -41,6 +42,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "record":
         jst_today = now.astimezone(JST).date()
         tracker.record_checkin(args.kind, jst_today)
+        if args.text:
+            tracker.record_sent_prompt(args.text, now)
         print(f"Recorded {args.kind} check-in for {jst_today.isoformat()}.")
 
 

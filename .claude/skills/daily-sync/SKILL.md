@@ -12,7 +12,7 @@
    b. 文脈を踏まえてチェックインプロンプトを生成
       例: 「昨日〇〇って言ってたけど、今朝の調子はどう？」
    c. `uv run push-line --text "{contextual prompt}"`
-   d. `uv run checkin record --kind morning|evening`
+   d. `uv run checkin record --kind morning|evening --text "{contextual prompt}"`
 
 ### 2. 従来タスク
 

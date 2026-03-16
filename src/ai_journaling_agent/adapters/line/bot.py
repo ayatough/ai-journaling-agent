@@ -25,6 +25,7 @@ from ai_journaling_agent.adapters.line.handlers import (
     handle_unfollow_event,
 )
 from ai_journaling_agent.core.ai_responder import AiResponder
+from ai_journaling_agent.core.checkin import CheckInTracker
 from ai_journaling_agent.core.config import Settings
 from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.repository import JsonJournalRepository
@@ -36,9 +37,11 @@ async def _respond_to_user(
     user_text: str,
     responder: AiResponder,
     access_token: str,
+    checkin_tracker: CheckInTracker,
 ) -> None:
     """Background task: generate AI response and push to LINE."""
-    response = await responder.generate_response(user_id, user_text)
+    checkin_prompt = checkin_tracker.get_recent_prompt()
+    response = await responder.generate_response(user_id, user_text, checkin_prompt=checkin_prompt)
     configuration = Configuration(access_token=access_token)
     async with AsyncApiClient(configuration) as api_client:
         line_api = AsyncMessagingApi(api_client)
@@ -62,6 +65,7 @@ def create_app(settings: Settings) -> FastAPI:
     responder = AiResponder(
         storage_dir=settings.storage_dir,
     )
+    checkin_tracker = CheckInTracker(settings.storage_dir)
 
     @app.post("/callback")
     async def callback(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
@@ -89,6 +93,7 @@ def create_app(settings: Settings) -> FastAPI:
                         user_text=event.message.text,
                         responder=responder,
                         access_token=settings.line_channel_access_token,
+                        checkin_tracker=checkin_tracker,
                     )
                 elif isinstance(event, FollowEvent):
                     await handle_follow_event(event, line_api, user_repository)

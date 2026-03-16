@@ -41,8 +41,12 @@ class AiResponder:
     def _save_session_id(self, user_id: str, session_id: str) -> None:
         (self._sessions_dir / f"{user_id}.txt").write_text(session_id)
 
-    async def generate_response(self, user_id: str, user_text: str) -> str:
+    async def generate_response(self, user_id: str, user_text: str, checkin_prompt: str | None = None) -> str:
         """Generate a response maintaining conversation context via session_id."""
+        if checkin_prompt:
+            prompt = f"（あなたは先ほどこのメッセージを送りました: 「{checkin_prompt}」）\nユーザーの返信: {user_text}"
+        else:
+            prompt = user_text
         session_id = self._load_session_id(user_id)
         options = ClaudeAgentOptions(
             system_prompt=SYSTEM_PROMPT,
@@ -51,7 +55,7 @@ class AiResponder:
             allowed_tools=[],
         )
         text, new_sid = "", None
-        async for msg in query(prompt=user_text, options=options):
+        async for msg in query(prompt=prompt, options=options):
             if isinstance(msg, AssistantMessage):
                 for block in msg.content:
                     if isinstance(block, TextBlock):
