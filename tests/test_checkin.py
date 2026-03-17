@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ai_journaling_agent.core.checkin import CheckInTracker
-from ai_journaling_agent.core.prompts import EVENING_CHECK_IN, MORNING_CHECK_IN
+from ai_journaling_agent.core.prompts import EVENING_CHECK_IN, MIDDAY_CHECK_IN, MORNING_CHECK_IN, NIGHT_SUMMARY
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -52,8 +52,41 @@ class TestNeedsCheckin:
         assert tracker.needs_checkin(now) == EVENING_CHECK_IN
 
     def test_boundary_evening_end(self, tmp_path: Path) -> None:
+        """Evening window now ends at 21:00 (night_summary takes over)."""
+        tracker = CheckInTracker(tmp_path)
+        now = _utc_from_jst(2026, 3, 15, 21)  # JST 21:00
+        # At 21:00 with no evening done, evening is returned
+        assert tracker.needs_checkin(now) == EVENING_CHECK_IN
+
+    def test_midday_window_returns_prompt(self, tmp_path: Path) -> None:
+        tracker = CheckInTracker(tmp_path)
+        now = _utc_from_jst(2026, 3, 15, 12)  # JST 12:00
+        assert tracker.needs_checkin(now) == MIDDAY_CHECK_IN
+
+    def test_midday_boundary_end(self, tmp_path: Path) -> None:
+        tracker = CheckInTracker(tmp_path)
+        now = _utc_from_jst(2026, 3, 15, 13)  # JST 13:00
+        assert tracker.needs_checkin(now) is None
+
+    def test_night_summary_after_evening(self, tmp_path: Path) -> None:
+        """night_summary fires at 21-23 only if evening is already done."""
+        tracker = CheckInTracker(tmp_path)
+        today = date(2026, 3, 15)
+        tracker.record_checkin("evening", today)
+        now = _utc_from_jst(2026, 3, 15, 22)  # JST 22:00
+        assert tracker.needs_checkin(now) == NIGHT_SUMMARY
+
+    def test_night_summary_without_evening_returns_evening(self, tmp_path: Path) -> None:
+        """At 21-23, if evening not done, evening is returned instead."""
         tracker = CheckInTracker(tmp_path)
         now = _utc_from_jst(2026, 3, 15, 22)  # JST 22:00
+        assert tracker.needs_checkin(now) == EVENING_CHECK_IN
+
+    def test_night_summary_boundary_end(self, tmp_path: Path) -> None:
+        tracker = CheckInTracker(tmp_path)
+        today = date(2026, 3, 15)
+        tracker.record_checkin("evening", today)
+        now = _utc_from_jst(2026, 3, 15, 23)  # JST 23:00
         assert tracker.needs_checkin(now) is None
 
 
@@ -74,6 +107,23 @@ class TestDuplicatePrevention:
         tracker.record_checkin("evening", today)
 
         now = _utc_from_jst(2026, 3, 15, 20)  # JST 20:00
+        assert tracker.needs_checkin(now) is None
+
+    def test_midday_already_sent(self, tmp_path: Path) -> None:
+        tracker = CheckInTracker(tmp_path)
+        today = date(2026, 3, 15)
+        tracker.record_checkin("midday", today)
+
+        now = _utc_from_jst(2026, 3, 15, 12)  # JST 12:00
+        assert tracker.needs_checkin(now) is None
+
+    def test_night_summary_already_sent(self, tmp_path: Path) -> None:
+        tracker = CheckInTracker(tmp_path)
+        today = date(2026, 3, 15)
+        tracker.record_checkin("evening", today)
+        tracker.record_checkin("night_summary", today)
+
+        now = _utc_from_jst(2026, 3, 15, 22)  # JST 22:00
         assert tracker.needs_checkin(now) is None
 
     def test_yesterday_does_not_block_today(self, tmp_path: Path) -> None:
