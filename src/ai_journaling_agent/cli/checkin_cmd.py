@@ -21,7 +21,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("status", help="Check if a check-in is needed now")
 
     record = sub.add_parser("record", help="Record that a check-in was sent")
-    record.add_argument("--kind", required=True, choices=["morning", "evening"])
+    record.add_argument("--kind", required=True, choices=["morning", "midday", "evening", "night_summary"])
     record.add_argument("--text", default=None, help="The prompt text that was sent (optional)")
 
     args = parser.parse_args(argv)
@@ -33,7 +33,15 @@ def main(argv: list[str] | None = None) -> None:
         prompt = tracker.needs_checkin(now)
         if prompt:
             jst_now = now.astimezone(JST)
-            kind = "morning" if jst_now.hour < 12 else "evening"
+            hour = jst_now.hour
+            if hour < 10:
+                kind = "morning"
+            elif hour < 13:
+                kind = "midday"
+            elif hour < 21:
+                kind = "evening"
+            else:
+                kind = "night_summary"
             print(f"{kind} check-in needed")
             print(f"Prompt: {prompt}")
         else:

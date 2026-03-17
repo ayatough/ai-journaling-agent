@@ -7,7 +7,12 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ai_journaling_agent.core.prompts import EVENING_CHECK_IN, MORNING_CHECK_IN
+from ai_journaling_agent.core.prompts import (
+    EVENING_CHECK_IN,
+    MIDDAY_CHECK_IN,
+    MORNING_CHECK_IN,
+    NIGHT_SUMMARY,
+)
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -34,7 +39,9 @@ class CheckInTracker:
 
         Time windows are evaluated in JST:
         - 06:00–09:59 → MORNING_CHECK_IN (if not sent today)
+        - 12:00–12:59 → MIDDAY_CHECK_IN (if not sent today)
         - 18:00–21:59 → EVENING_CHECK_IN (if not sent today)
+        - 21:00–22:59 → NIGHT_SUMMARY (if evening done but summary not sent today)
         """
         jst_now = now.astimezone(JST)
         today = jst_now.date().isoformat()
@@ -44,7 +51,15 @@ class CheckInTracker:
         if 6 <= hour < 10:
             if data.get("last_morning_checkin") != today:
                 return MORNING_CHECK_IN
-        elif 18 <= hour < 22:
+        elif 12 <= hour < 13:
+            if data.get("last_midday_checkin") != today:
+                return MIDDAY_CHECK_IN
+        elif 18 <= hour < 21:
+            if data.get("last_evening_checkin") != today:
+                return EVENING_CHECK_IN
+        elif 21 <= hour < 23:
+            if data.get("last_evening_checkin") == today and data.get("last_night_summary_checkin") != today:
+                return NIGHT_SUMMARY
             if data.get("last_evening_checkin") != today:
                 return EVENING_CHECK_IN
 
@@ -54,7 +69,7 @@ class CheckInTracker:
         """Record that a check-in was sent.
 
         Args:
-            kind: "morning" or "evening"
+            kind: "morning", "midday", "evening", or "night_summary"
             today: the date of the check-in
         """
         data = self._load()

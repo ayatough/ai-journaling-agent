@@ -9,10 +9,25 @@
 1. `uv run checkin status` で確認
 2. チェックインが必要なら:
    a. `uv run journal-history --days 3` で直近の文脈を取得
-   b. 文脈を踏まえてチェックインプロンプトを生成
-      例: 「昨日〇〇って言ってたけど、今朝の調子はどう？」
+   b. 文脈を踏まえてチェックインプロンプトを生成（時間帯別の方針は下記参照）
    c. `uv run push-line --text "{contextual prompt}"`
-   d. `uv run checkin record --kind morning|evening --text "{contextual prompt}"`
+   d. `uv run checkin record --kind morning|midday|evening|night_summary --text "{contextual prompt}"`
+
+### 時間帯別プロンプト方針
+
+| 時間帯 (JST) | kind | 方針 |
+|---------------|------|------|
+| 06:00–09:59 | morning | 今日の気分・予定を聞く |
+| 12:00–12:59 | midday | 午前の振り返り・午後の予定 |
+| 18:00–20:59 | evening | 今日の振り返りを促す |
+| 21:00–22:59 | night_summary | `uv run journal-today` で当日記録を確認し、まとめを送信。記録がなければ優しくリマインド |
+
+### night_summary の手順
+
+1. `uv run journal-today` で当日エントリを取得
+2. エントリがあれば → 内容を要約して「今日はこんな一日でしたね」と送信
+3. エントリがなければ → 「今日は記録がないみたいですが、何かあれば聞かせてください」と優しく促す
+4. まとめは事実ベース（評価・判定はしない）
 
 ### 2. 従来タスク
 
