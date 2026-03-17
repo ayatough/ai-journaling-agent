@@ -11,7 +11,7 @@ from linebot.v3.messaging import (  # type: ignore[import-untyped]
 )
 from linebot.v3.webhooks import FollowEvent, MessageEvent, UnfollowEvent  # type: ignore[import-untyped]
 
-from ai_journaling_agent.core.classifier import classify_message, parse_structured_entry
+from ai_journaling_agent.core.classifier import classify_message, emoji_to_mood, parse_structured_entry
 from ai_journaling_agent.core.inbox import InboxMessage, InboxRepository, generate_message_id
 from ai_journaling_agent.core.journal import EntryLevel, JournalEntry
 from ai_journaling_agent.core.prompts import WELCOME_BACK
@@ -55,10 +55,13 @@ async def handle_message_event(
             learnings=parsed["learnings"],
         )
     elif level == EntryLevel.EMOJI:
+        stripped = text.strip()
         entry = JournalEntry(
             timestamp=now,
             level=level,
-            emoji=text.strip(),
+            emoji=stripped,
+            mood_emoji=stripped,
+            mood=emoji_to_mood(stripped),
         )
     else:
         entry = JournalEntry(
