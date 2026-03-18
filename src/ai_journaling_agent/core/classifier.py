@@ -44,6 +44,39 @@ def classify_message(text: str) -> EntryLevel:
     return EntryLevel.SUMMARY
 
 
+_MOOD_SCORES: dict[str, int] = {}
+for _score, _emojis in [
+    (5, "😊🎉🥳✨🌟💪🎊😆🤩"),
+    (4, "😄☀️👍🙂😌🌈😀"),
+    (3, "😐🤔💭🙃😶"),
+    (2, "😢😞😔😟😩😫"),
+    (1, "😭😤😡🤮😰😱"),
+]:
+    for _ch in _emojis:
+        cat = unicodedata.category(_ch)
+        if cat in ("So", "Sk"):
+            _MOOD_SCORES[_ch] = _score
+
+
+def _first_emoji(text: str) -> str | None:
+    """Extract the first emoji character from text."""
+    for ch in text:
+        if unicodedata.category(ch) in ("So", "Sk"):
+            return ch
+    return None
+
+
+def emoji_to_mood(text: str) -> int | None:
+    """Estimate a mood score (1-5) from the first emoji in text.
+
+    Returns None for emojis not in the known mood dictionary (e.g. ☕, 🌻).
+    """
+    ch = _first_emoji(text)
+    if ch is None:
+        return None
+    return _MOOD_SCORES.get(ch)
+
+
 def parse_structured_entry(text: str) -> dict[str, list[str]]:
     """Extract achievements / gratitude / learnings from structured text.
 

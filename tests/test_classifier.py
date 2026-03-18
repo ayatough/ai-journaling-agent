@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_journaling_agent.core.classifier import classify_message, parse_structured_entry
+from ai_journaling_agent.core.classifier import classify_message, emoji_to_mood, parse_structured_entry
 from ai_journaling_agent.core.journal import EntryLevel
 
 
@@ -90,3 +90,45 @@ class TestParseStructuredEntry:
         text = "できたこと：朝ラン5km"
         result = parse_structured_entry(text)
         assert result["achievements"] == ["朝ラン5km"]
+
+
+class TestEmojiToMood:
+    """emoji_to_mood estimates mood score from emoji."""
+
+    @pytest.mark.parametrize(
+        ("emoji", "expected"),
+        [
+            ("😊", 5),
+            ("🎉", 5),
+            ("😄", 4),
+            ("👍", 4),
+            ("😐", 3),
+            ("🤔", 3),
+            ("😢", 2),
+            ("😞", 2),
+            ("😭", 1),
+            ("😡", 1),
+        ],
+        ids=[
+            "happy_5", "party_5",
+            "smile_4", "thumbsup_4",
+            "neutral_3", "thinking_3",
+            "cry_2", "disappointed_2",
+            "sob_1", "angry_1",
+        ],
+    )
+    def test_known_emoji(self, emoji: str, expected: int) -> None:
+        assert emoji_to_mood(emoji) == expected
+
+    def test_unknown_emoji_returns_none(self) -> None:
+        assert emoji_to_mood("☕") is None
+        assert emoji_to_mood("🌻") is None
+        assert emoji_to_mood("🍕") is None
+
+    def test_multiple_emoji_uses_first(self) -> None:
+        assert emoji_to_mood("😭😊") == 1
+        assert emoji_to_mood("😊😭") == 5
+
+    def test_no_emoji_returns_none(self) -> None:
+        assert emoji_to_mood("hello") is None
+        assert emoji_to_mood("") is None

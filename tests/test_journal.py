@@ -74,3 +74,50 @@ class TestRoundTrip:
         )
         restored = JournalEntry.from_dict(original.to_dict())
         assert restored == original
+
+    def test_mood_round_trip(self) -> None:
+        original = JournalEntry(
+            timestamp=datetime(2026, 3, 15, 9, 0, 0),
+            level=EntryLevel.EMOJI,
+            emoji="😊",
+            mood=5,
+            mood_emoji="😊",
+        )
+        restored = JournalEntry.from_dict(original.to_dict())
+        assert restored == original
+        assert restored.mood == 5
+        assert restored.mood_emoji == "😊"
+
+    def test_mood_none_round_trip(self) -> None:
+        """Emoji without a known mood score preserves None."""
+        original = JournalEntry(
+            timestamp=datetime(2026, 3, 15, 9, 0, 0),
+            level=EntryLevel.EMOJI,
+            emoji="☕",
+            mood=None,
+            mood_emoji="☕",
+        )
+        restored = JournalEntry.from_dict(original.to_dict())
+        assert restored == original
+        assert restored.mood is None
+        assert restored.mood_emoji == "☕"
+
+
+class TestBackwardCompat:
+    """Existing data without mood fields loads correctly."""
+
+    def test_legacy_entry_without_mood(self) -> None:
+        legacy_data = {
+            "timestamp": "2026-03-15T09:00:00",
+            "level": 0,
+            "emoji": "😊",
+            "summary": None,
+            "achievements": [],
+            "gratitude": [],
+            "learnings": [],
+            "photo_paths": [],
+        }
+        entry = JournalEntry.from_dict(legacy_data)
+        assert entry.mood is None
+        assert entry.mood_emoji is None
+        assert entry.emoji == "😊"

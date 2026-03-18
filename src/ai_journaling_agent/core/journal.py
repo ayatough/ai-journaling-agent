@@ -28,6 +28,8 @@ class JournalEntry:
     gratitude: list[str] = field(default_factory=list)
     learnings: list[str] = field(default_factory=list)
     photo_paths: list[str] = field(default_factory=list)
+    mood: int | None = None  # 1-5 scale (1=つらい, 5=最高)
+    mood_emoji: str | None = None  # the emoji representing the user's mood
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-compatible dictionary."""
@@ -40,6 +42,8 @@ class JournalEntry:
             "gratitude": self.gratitude,
             "learnings": self.learnings,
             "photo_paths": self.photo_paths,
+            "mood": self.mood,
+            "mood_emoji": self.mood_emoji,
         }
 
     @classmethod
@@ -54,4 +58,6 @@ class JournalEntry:
             gratitude=list(data.get("gratitude") or []),
             learnings=list(data.get("learnings") or []),
             photo_paths=list(data.get("photo_paths") or []),
+            mood=data.get("mood"),
+            mood_emoji=data.get("mood_emoji"),
         )
