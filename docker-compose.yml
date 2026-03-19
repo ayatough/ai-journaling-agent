@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      # OAuth credentials from local claude login
+      - ${CLAUDE_CREDENTIALS_PATH:-~/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
+      # Persistent storage for journal data
+      - journal-data:/root/.ai-journaling-agent/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  checkin:
+    build: .
+    env_file: .env
+    volumes:
+      - ${CLAUDE_CREDENTIALS_PATH:-~/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
+      - journal-data:/root/.ai-journaling-agent/data
+    entrypoint: ["/bin/sh", "/app/scripts/run-checkin.sh", "--loop"]
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  journal-data:
