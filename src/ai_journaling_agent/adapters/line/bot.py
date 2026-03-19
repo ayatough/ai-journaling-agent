@@ -67,6 +67,10 @@ def create_app(settings: Settings) -> FastAPI:
     )
     checkin_tracker = CheckInTracker(settings.storage_dir)
 
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.post("/callback")
     async def callback(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
         signature = request.headers.get("X-Line-Signature", "")
