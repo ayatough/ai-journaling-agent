@@ -30,6 +30,9 @@ from ai_journaling_agent.core.config import Settings
 from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.repository import JsonJournalRepository
 from ai_journaling_agent.core.user import JsonUserRepository
+from ai_journaling_agent.core.user_profile import JsonUserProfileRepository, UserProfile
+
+PROFILE_UPDATE_INTERVAL = 5
 
 
 async def _respond_to_user(
@@ -38,10 +41,12 @@ async def _respond_to_user(
     responder: AiResponder,
     access_token: str,
     checkin_tracker: CheckInTracker,
+    profile_repository: JsonUserProfileRepository,
 ) -> None:
     """Background task: generate AI response and push to LINE."""
+    profile = profile_repository.get(user_id)
     checkin_prompt = checkin_tracker.get_recent_prompt()
-    response = await responder.generate_response(user_id, user_text, checkin_prompt=checkin_prompt)
+    response = await responder.generate_response(user_id, user_text, checkin_prompt=checkin_prompt, profile=profile)
     configuration = Configuration(access_token=access_token)
     async with AsyncApiClient(configuration) as api_client:
         line_api = AsyncMessagingApi(api_client)
@@ -51,6 +56,14 @@ async def _respond_to_user(
                 messages=[TextMessage(text=response)],
             )
         )
+    # Profile auto-update
+    if profile is None:
+        profile = UserProfile(user_id=user_id)
+    profile.profile_update_counter += 1
+    if profile.profile_update_counter % PROFILE_UPDATE_INTERVAL == 0:
+        from ai_journaling_agent.core.profile_extractor import extract_profile_updates
+        profile = await extract_profile_updates(user_text, profile, responder)
+    profile_repository.save(profile)
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -66,6 +79,7 @@ def create_app(settings: Settings) -> FastAPI:
         storage_dir=settings.storage_dir,
     )
     checkin_tracker = CheckInTracker(settings.storage_dir)
+    profile_repository = JsonUserProfileRepository(settings.storage_dir)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -98,6 +112,7 @@ def create_app(settings: Settings) -> FastAPI:
                         responder=responder,
                         access_token=settings.line_channel_access_token,
                         checkin_tracker=checkin_tracker,
+                        profile_repository=profile_repository,
                     )
                 elif isinstance(event, FollowEvent):
                     await handle_follow_event(event, line_api, user_repository)
