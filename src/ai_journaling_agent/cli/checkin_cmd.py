@@ -18,16 +18,19 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Check-in management")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("status", help="Check if a check-in is needed now")
+    status_p = sub.add_parser("status", help="Check if a check-in is needed now")
+    status_p.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
 
     record = sub.add_parser("record", help="Record that a check-in was sent")
     record.add_argument("--kind", required=True, choices=["morning", "midday", "evening", "night_summary"])
     record.add_argument("--text", default=None, help="The prompt text that was sent (optional)")
+    record.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
 
     args = parser.parse_args(argv)
     settings = Settings()  # type: ignore[call-arg]
     tracker = CheckInTracker(settings.storage_dir)
-    now = datetime.now(tz=UTC)
+    _now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
+    now = _now
 
     if args.command == "status":
         prompt = tracker.needs_checkin(now)
