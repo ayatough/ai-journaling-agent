@@ -19,6 +19,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="View journal entries by date (JST, defaults to today)")
     parser.add_argument("--user", help="LINE user ID (defaults to OWNER_USER_ID)")
     parser.add_argument("--date", help="Date to view in YYYY-MM-DD format (defaults to today JST)")
+    parser.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
 
     args = parser.parse_args(argv)
     settings = Settings()  # type: ignore[call-arg]
@@ -35,7 +36,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Error: invalid date format '{args.date}' (expected YYYY-MM-DD)", file=sys.stderr)
             sys.exit(1)
     else:
-        target_date = datetime.now(tz=UTC).astimezone(JST).date()
+        _now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
+        target_date = _now.astimezone(JST).date()
 
     repo = JsonJournalRepository(settings.storage_dir)
     entries = repo.list_entries(user_id)

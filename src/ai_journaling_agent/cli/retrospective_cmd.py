@@ -16,6 +16,7 @@ from ai_journaling_agent.core.retrospective import generate_monthly_summary, gen
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generate retrospective summary")
     parser.add_argument("--user", help="LINE user ID (defaults to OWNER_USER_ID)")
+    parser.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--weekly", action="store_true", help="Generate weekly summary (last 7 days)")
     group.add_argument("--monthly", action="store_true", help="Generate monthly summary (last 30 days)")
@@ -30,7 +31,8 @@ def main(argv: list[str] | None = None) -> None:
 
     repo = JsonJournalRepository(settings.storage_dir)
     responder = AiResponder(storage_dir=settings.storage_dir)
-    today = datetime.now(tz=UTC).date()
+    _now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
+    today = _now.date()
 
     if args.monthly:
         month_start = date(today.year, today.month, 1) - timedelta(days=1)

@@ -16,6 +16,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="View recent journal entries")
     parser.add_argument("--user", help="LINE user ID (defaults to OWNER_USER_ID)")
     parser.add_argument("--days", type=int, default=3, help="Number of days to show (default: 3)")
+    parser.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
 
     args = parser.parse_args(argv)
     settings = Settings()  # type: ignore[call-arg]
@@ -26,7 +27,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     repo = JsonJournalRepository(settings.storage_dir)
-    cutoff = datetime.now(tz=UTC) - timedelta(days=args.days)
+    _now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
+    cutoff = _now - timedelta(days=args.days)
 
     entries = repo.list_entries(user_id)
     recent = [e for e in entries if e.timestamp >= cutoff]
