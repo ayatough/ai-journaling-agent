@@ -1,0 +1,24 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-base-action@beta
+        continue-on-error: true
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            このPRのコードをレビューしてください。以下の観点を重視してください:
+            - core/ のロジックが LINE 非依存のアーキテクチャを維持しているか
+            - テストが適切に書かれているか（datetime.now() のハードコードがないか等）
+            - 新しい依存関係が適切か
+            コメントは日本語でお願いします。
