@@ -28,6 +28,7 @@ checkin = "ai_journaling_agent.cli.checkin_cmd:main"
 journal-today = "ai_journaling_agent.cli.today_cmd:main"
 mood-report = "ai_journaling_agent.cli.mood_report_cmd:main"
 retrospective = "ai_journaling_agent.cli.retrospective_cmd:main"
+chat = "ai_journaling_agent.adapters.cli.repl:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -50,3 +51,7 @@ strict = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "journey: end-to-end user story tests (no API key needed)",
+    "e2e: tests requiring ANTHROPIC_API_KEY",
+]
