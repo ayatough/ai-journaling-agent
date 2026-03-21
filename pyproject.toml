@@ -26,6 +26,8 @@ push-line = "ai_journaling_agent.cli.push_cmd:main"
 journal-history = "ai_journaling_agent.cli.history_cmd:main"
 checkin = "ai_journaling_agent.cli.checkin_cmd:main"
 journal-today = "ai_journaling_agent.cli.today_cmd:main"
+mood-report = "ai_journaling_agent.cli.mood_report_cmd:main"
+retrospective = "ai_journaling_agent.cli.retrospective_cmd:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
+
+if TYPE_CHECKING:
+    from ai_journaling_agent.core.user_profile import UserProfile
 
 SYSTEM_PROMPT = """あなたはジャーナリングパートナーです。ユーザーの日々の記録を手伝います。
 
@@ -53,15 +57,32 @@ class AiResponder:
     def _save_session_id(self, user_id: str, session_id: str) -> None:
         (self._sessions_dir / f"{user_id}.txt").write_text(session_id)
 
-    async def generate_response(self, user_id: str, user_text: str, checkin_prompt: str | None = None) -> str:
+    async def generate_response(
+        self,
+        user_id: str,
+        user_text: str,
+        checkin_prompt: str | None = None,
+        profile: UserProfile | None = None,
+    ) -> str:
         """Generate a response maintaining conversation context via session_id."""
         if checkin_prompt:
             prompt = f"（あなたは先ほどこのメッセージを送りました: 「{checkin_prompt}」）\nユーザーの返信: {user_text}"
         else:
             prompt = user_text
+        system_prompt = SYSTEM_PROMPT
+        if profile is not None:
+            parts = []
+            if profile.interests:
+                parts.append(f"興味・関心: {', '.join(profile.interests)}")
+            if profile.communication_style:
+                parts.append(f"コミュニケーションスタイル: {profile.communication_style}")
+            if profile.recurring_themes:
+                parts.append(f"繰り返し出てくるテーマ: {', '.join(profile.recurring_themes)}")
+            if parts:
+                system_prompt = SYSTEM_PROMPT + "\n\n【このユーザーについて】\n" + "\n".join(parts)
         session_id = self._load_session_id(user_id)
         options = ClaudeAgentOptions(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             resume=session_id,
             max_turns=1,
             allowed_tools=[],
