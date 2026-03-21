@@ -83,7 +83,7 @@ class CheckInTracker:
         data["last_sent_at"] = sent_at.isoformat()
         self._save(data)
 
-    def get_recent_prompt(self, within_hours: int = 8) -> str | None:
+    def get_recent_prompt(self, within_hours: int = 8, now: datetime | None = None) -> str | None:
         """Return the prompt text if sent within the given number of hours."""
         data = self._load()
         prompt = data.get("last_sent_prompt")
@@ -91,6 +91,7 @@ class CheckInTracker:
         if not prompt or not sent_at_str:
             return None
         sent_at = datetime.fromisoformat(sent_at_str)
-        if (datetime.now(tz=UTC) - sent_at).total_seconds() < within_hours * 3600:
+        _now = now or datetime.now(tz=UTC)
+        if (_now - sent_at).total_seconds() < within_hours * 3600:
             return prompt
         return None
