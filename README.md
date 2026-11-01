@@ -107,4 +107,4 @@ uv run mypy src/                               # 型チェック
 
 ## アーキテクチャ
 
-詳細は [ADR-0003](docs/adr/0003-operational-architecture.md) を参照。
+システム図は [docs/architecture.md](docs/architecture.md)、設計判断は [ADR-0004](docs/adr/0004-instant-response-with-agent-sdk.md) を参照（ADR-0003 の `/loop` 方式は置き換え済み）。
