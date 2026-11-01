@@ -11,21 +11,7 @@
 set -e
 
 run_once() {
-    STATUS=$(uv run checkin status 2>&1)
-
-    case "$STATUS" in
-        *"check-in needed"*)
-            KIND=$(echo "$STATUS" | head -1 | awk '{print $1}')
-            PROMPT=$(echo "$STATUS" | grep "^Prompt:" | sed 's/^Prompt: //')
-            echo "[checkin] $(date -u +%Y-%m-%dT%H:%M:%SZ) Sending $KIND check-in..."
-            uv run push-line --text "$PROMPT"
-            uv run checkin record --kind "$KIND" --text "$PROMPT"
-            echo "[checkin] Done."
-            ;;
-        *)
-            echo "[checkin] $(date -u +%Y-%m-%dT%H:%M:%SZ) No check-in needed."
-            ;;
-    esac
+    echo "[checkin] $(date -u +%Y-%m-%dT%H:%M:%SZ) $(uv run checkin run 2>&1)"
 }
 
 if [ "${1:-}" = "--loop" ]; then
