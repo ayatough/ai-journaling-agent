@@ -30,9 +30,14 @@ OWNER_USER_ID=your-line-user-id
 |------|------|------|
 | `LINE_CHANNEL_SECRET` | Yes | LINE チャネルシークレット |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Yes | LINE チャネルアクセストークン |
-| `OWNER_USER_ID` | No | push送信時のデフォルトユーザーID |
+| `OWNER_USER_ID` | Yes | 自分の LINE ユーザーID。**このユーザー以外のメッセージは無視**。未設定なら誰にも応答しない。チェックインの送信先 |
 | `STORAGE_DIR` | No | データ保存先 (デフォルト: `~/.ai-journaling-agent/data`) |
+| `HOST` | No | 待受アドレス (デフォルト: `0.0.0.0`。Windows 起動スクリプトでは `127.0.0.1`) |
 | `PORT` | No | Webhookサーバーのポート (デフォルト: `8000`) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Windows 運用時 | `claude setup-token` で発行した長期トークン |
+| `NGROK_DOMAIN` | Windows 運用時 | ngrok の固定ドメイン |
+
+> 1 人 1 インスタンスで使う。自分用に立てる手順（Windows）は [docs/setup-windows.md](docs/setup-windows.md)。
 
 ## 起動方法
 
@@ -48,21 +53,20 @@ uv run python -m ai_journaling_agent.main
 - エンドポイント: `POST /callback`
 - デフォルトポート: 8000
 
-### 2. AI応答ループ (Claude Code)
+### 2. チェックイン送信
 
-別プロセスでClaude Codeを起動し、定期的にインボックスを処理します。
+朝・昼・夕・夜のチェックインを、未送信なら LINE に push します。30 分ごとに実行します。
 
 ```bash
-claude code /loop 10m /daily-sync
+./scripts/run-checkin.sh --loop          # Linux / Docker
 ```
 
-このループが行うこと:
-- 未処理メッセージの読み取りとAI応答の生成・送信
-- 朝 (6-10時 JST) / 夜 (18-22時 JST) のチェックイン促進
+Windows ではタスクスケジューラで常駐させます（[docs/setup-windows.md](docs/setup-windows.md)）。
+AI の応答は webhook 内で即時に生成されるため（ADR-0004）、Claude Code の `/loop` は不要です。
 
 ## CLIツール
 
-Claude Code `/loop` から使用されるCLIツール群です。
+運用・デバッグ用の CLI ツール群です。
 
 | コマンド | 説明 |
 |----------|------|
