@@ -23,6 +23,7 @@ outputs/
 
 # Claude Code
 .claude/scheduled_tasks.lock
+.claude/settings.local.json
 
 # OS
 .DS_Store

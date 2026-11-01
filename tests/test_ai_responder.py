@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from claude_agent_sdk import ProcessError
+
 
 class _TextBlock:
     def __init__(self, text: str) -> None:
@@ -89,6 +92,73 @@ class TestGenerateResponse:
             await responder.generate_response("U1234", "こんにちは")
 
         assert captured_options[0].resume == "existing-sid"
+
+    async def test_retries_without_resume_when_session_is_stale(self, tmp_path: Path) -> None:
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        storage_dir = tmp_path / "data"
+        (storage_dir / "sessions").mkdir(parents=True)
+        (storage_dir / "sessions" / "U1234.txt").write_text("stale-sid")
+
+        resumes: list = []
+
+        async def mock_query(prompt: str, options):  # type: ignore[return]
+            resumes.append(options.resume)
+            if options.resume is not None:
+                raise ProcessError("Command failed", exit_code=1)
+            yield _AssistantMessage("復旧しました")
+            yield _ResultMessage("fresh-sid")
+
+        q_patch, am_patch, rm_patch, tb_patch = (
+            patch("ai_journaling_agent.core.ai_responder.query", mock_query),
+            patch("ai_journaling_agent.core.ai_responder.AssistantMessage", _AssistantMessage),
+            patch("ai_journaling_agent.core.ai_responder.ResultMessage", _ResultMessage),
+            patch("ai_journaling_agent.core.ai_responder.TextBlock", _TextBlock),
+        )
+        with q_patch, am_patch, rm_patch, tb_patch:
+            responder = AiResponder(storage_dir=storage_dir)
+            result = await responder.generate_response("U1234", "こんにちは")
+
+        assert result == "復旧しました"
+        assert resumes == ["stale-sid", None]
+        assert (storage_dir / "sessions" / "U1234.txt").read_text().strip() == "fresh-sid"
+
+    async def test_error_without_session_is_not_swallowed(self, tmp_path: Path) -> None:
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        calls: list = []
+
+        async def mock_query(prompt: str, options):  # type: ignore[return]
+            calls.append(options.resume)
+            raise ProcessError("Command failed", exit_code=1)
+            yield  # pragma: no cover
+
+        with patch("ai_journaling_agent.core.ai_responder.query", mock_query):
+            responder = AiResponder(storage_dir=tmp_path / "data")
+            with pytest.raises(ProcessError):
+                await responder.generate_response("U1234", "こんにちは")
+
+        assert calls == [None]
+
+    async def test_error_on_retry_propagates(self, tmp_path: Path) -> None:
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        storage_dir = tmp_path / "data"
+        (storage_dir / "sessions").mkdir(parents=True)
+        (storage_dir / "sessions" / "U1234.txt").write_text("stale-sid")
+        calls: list = []
+
+        async def mock_query(prompt: str, options):  # type: ignore[return]
+            calls.append(options.resume)
+            raise ProcessError("Command failed", exit_code=1)
+            yield  # pragma: no cover
+
+        with patch("ai_journaling_agent.core.ai_responder.query", mock_query):
+            responder = AiResponder(storage_dir=storage_dir)
+            with pytest.raises(ProcessError):
+                await responder.generate_response("U1234", "こんにちは")
+
+        assert calls == ["stale-sid", None]
 
     async def test_checkin_prompt_is_prepended_to_user_text(self, tmp_path: Path) -> None:
         from ai_journaling_agent.core.ai_responder import AiResponder

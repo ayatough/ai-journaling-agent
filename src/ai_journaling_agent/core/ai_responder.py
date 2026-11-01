@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ProcessError, ResultMessage, TextBlock, query
 
 if TYPE_CHECKING:
     from ai_journaling_agent.core.user_profile import UserProfile
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """あなたはジャーナリングパートナーです。ユーザーの日々の記録を手伝います。
 
@@ -57,6 +60,21 @@ class AiResponder:
     def _save_session_id(self, user_id: str, session_id: str) -> None:
         (self._sessions_dir / f"{user_id}.txt").write_text(session_id)
 
+    def _clear_session_id(self, user_id: str) -> None:
+        (self._sessions_dir / f"{user_id}.txt").unlink(missing_ok=True)
+
+    @staticmethod
+    async def _run_query(prompt: str, options: ClaudeAgentOptions) -> tuple[str, str | None]:
+        text, new_sid = "", None
+        async for msg in query(prompt=prompt, options=options):
+            if isinstance(msg, AssistantMessage):
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        text += block.text
+            elif isinstance(msg, ResultMessage):
+                new_sid = msg.session_id
+        return text, new_sid
+
     async def generate_response(
         self,
         user_id: str,
@@ -87,14 +105,15 @@ class AiResponder:
             max_turns=1,
             allowed_tools=[],
         )
-        text, new_sid = "", None
-        async for msg in query(prompt=prompt, options=options):
-            if isinstance(msg, AssistantMessage):
-                for block in msg.content:
-                    if isinstance(block, TextBlock):
-                        text += block.text
-            elif isinstance(msg, ResultMessage):
-                new_sid = msg.session_id
+        try:
+            text, new_sid = await self._run_query(prompt, options)
+        except ProcessError:
+            if session_id is None:
+                raise
+            logger.warning("Resuming session failed for %s; starting a new session", user_id, exc_info=True)
+            self._clear_session_id(user_id)
+            options.resume = None
+            text, new_sid = await self._run_query(prompt, options)
         if new_sid:
             self._save_session_id(user_id, new_sid)
         return text or "(応答なし)"
