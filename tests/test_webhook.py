@@ -19,12 +19,15 @@ from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.prompts import WELCOME_BACK
 from ai_journaling_agent.core.repository import JsonJournalRepository
 
+OWNER = "U1234"
 
-def _make_settings(tmp_path: Path) -> Settings:
+
+def _make_settings(tmp_path: Path, owner_user_id: str = OWNER) -> Settings:
     return Settings(
         line_channel_secret="test-secret",
         line_channel_access_token="test-token",
         storage_dir=tmp_path,
+        owner_user_id=owner_user_id,
     )
 
 
@@ -38,7 +41,7 @@ def _make_message_event(user_id: str, text: str) -> MagicMock:
     return event
 
 
-def _make_follow_event(user_id: str = "U0000") -> MagicMock:
+def _make_follow_event(user_id: str = OWNER) -> MagicMock:
     event = MagicMock(spec=FollowEvent)
     event.source = MagicMock(spec=Source)
     event.source.user_id = user_id
@@ -46,11 +49,11 @@ def _make_follow_event(user_id: str = "U0000") -> MagicMock:
     return event
 
 
-def _create_test_client(tmp_path: Path, events: list[object]) -> TestClient:
+def _create_test_client(tmp_path: Path, events: list[object], owner_user_id: str = OWNER) -> TestClient:
     """Create a TestClient with mocked LINE SDK components."""
     from ai_journaling_agent.adapters.line.bot import create_app
 
-    settings = _make_settings(tmp_path)
+    settings = _make_settings(tmp_path, owner_user_id)
 
     with (
         patch("ai_journaling_agent.adapters.line.bot.WebhookParser") as mock_parser_cls,
@@ -199,3 +202,55 @@ class TestFollowEvent:
         call_args = mock_line_api.reply_message.call_args
         request = call_args[0][0]
         assert request.messages[0].text == WELCOME_BACK
+
+
+class TestOwnerOnly:
+    """Only the configured owner can use the bot; everyone else is ignored."""
+
+    def _post(
+        self, tmp_path: Path, events: list[object], owner_user_id: str = OWNER
+    ) -> tuple[int, AsyncMock, MagicMock]:
+        with (
+            patch("ai_journaling_agent.adapters.line.bot._respond_to_user") as mock_respond,
+            patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient") as mock_client_cls,
+            patch("ai_journaling_agent.adapters.line.bot.AsyncMessagingApi") as mock_api_cls,
+        ):
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__.return_value = AsyncMock()
+            mock_client_cls.return_value = mock_ctx
+            mock_line_api = AsyncMock()
+            mock_api_cls.return_value = mock_line_api
+            client = _create_test_client(tmp_path, events, owner_user_id)
+            response = client.post("/callback", content=b"{}", headers={"X-Line-Signature": "valid"})
+        return response.status_code, mock_line_api, mock_respond
+
+    def test_non_owner_message_is_ignored(self, tmp_path: Path) -> None:
+        status, line_api, respond = self._post(tmp_path, [_make_message_event("U9999", "こんにちは")])
+        assert status == 200
+        respond.assert_not_called()
+        line_api.reply_message.assert_not_called()
+        assert JsonJournalRepository(tmp_path).list_entries("U9999") == []
+        assert JsonInboxRepository(tmp_path).list_pending() == []
+
+    def test_non_owner_follow_is_ignored(self, tmp_path: Path) -> None:
+        status, line_api, _ = self._post(tmp_path, [_make_follow_event("U9999")])
+        assert status == 200
+        line_api.reply_message.assert_not_called()
+
+    def test_owner_message_is_processed(self, tmp_path: Path) -> None:
+        status, _, respond = self._post(tmp_path, [_make_message_event(OWNER, "今日は良い日")])
+        assert status == 200
+        assert len(JsonJournalRepository(tmp_path).list_entries(OWNER)) == 1
+
+    def test_unset_owner_ignores_everyone(self, tmp_path: Path) -> None:
+        status, _, respond = self._post(tmp_path, [_make_message_event(OWNER, "hi")], owner_user_id="")
+        assert status == 200
+        respond.assert_not_called()
+        assert JsonJournalRepository(tmp_path).list_entries(OWNER) == []
+
+    def test_mixed_events_only_owner_processed(self, tmp_path: Path) -> None:
+        events = [_make_message_event("U9999", "spam"), _make_message_event(OWNER, "本物")]
+        status, _, _ = self._post(tmp_path, events)
+        assert status == 200
+        assert JsonJournalRepository(tmp_path).list_entries("U9999") == []
+        assert [e.summary for e in JsonJournalRepository(tmp_path).list_entries(OWNER)] == ["本物"]

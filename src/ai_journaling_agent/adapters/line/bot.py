@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore[import-untyped]
 from linebot.v3.messaging import (  # type: ignore[import-untyped]
@@ -33,6 +35,23 @@ from ai_journaling_agent.core.user import JsonUserRepository
 from ai_journaling_agent.core.user_profile import JsonUserProfileRepository, UserProfile
 
 PROFILE_UPDATE_INTERVAL = 5
+
+logger = logging.getLogger(__name__)
+
+
+def is_owner_event(event: object, owner_user_id: str) -> bool:
+    """Return True if the event was sent by the configured owner.
+
+    This bot is personal: each person runs their own instance with their own
+    LINE channel and Claude subscription. Events from anyone else (or from
+    groups/rooms without a user id) are ignored. If no owner is configured,
+    every event is ignored so that the bot fails closed.
+    """
+    if not owner_user_id:
+        return False
+    source = getattr(event, "source", None)
+    user_id = getattr(source, "user_id", None)
+    return bool(user_id) and user_id == owner_user_id
 
 
 async def _respond_to_user(
@@ -81,6 +100,9 @@ def create_app(settings: Settings) -> FastAPI:
     checkin_tracker = CheckInTracker(settings.storage_dir)
     profile_repository = JsonUserProfileRepository(settings.storage_dir)
 
+    if not settings.owner_user_id:
+        logger.warning("OWNER_USER_ID is not set; all LINE events will be ignored")
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -98,6 +120,10 @@ def create_app(settings: Settings) -> FastAPI:
         async with AsyncApiClient(configuration) as api_client:
             line_api = AsyncMessagingApi(api_client)
             for event in events:
+                if not is_owner_event(event, settings.owner_user_id):
+                    user_id = getattr(getattr(event, "source", None), "user_id", None) or "?"
+                    logger.warning("Ignoring event from non-owner user %s...", str(user_id)[:6])
+                    continue
                 if isinstance(event, MessageEvent) and isinstance(
                     event.message, TextMessageContent
                 ):
