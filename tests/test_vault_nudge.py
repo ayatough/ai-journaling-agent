@@ -31,7 +31,7 @@ def vault(tmp_path: Path) -> Path:
     _write(root, "Notes/老子 全訳注/老子 全訳注.md", '---\nicon: 📘\ndate: "2026-06-25"\n---\n')
     _write(root, "Notes/新しい本/新しい本.md", '---\nicon: 📘\ndate: "2026-11-05"\n---\n')
     _write(root, "Templates/Book Source.md", '---\nicon: 📘\ndate: "{{date:YYYY-MM-DD}}"\n---\n')
-    _write(root, "Notes/Journal/2026-11-07.md", "---\nicon: ✍\ndate: \"2026-11-07\"\nmood: \n---\n\n")
+    _write(root, "Notes/Journal/2026-11-07.md", '---\nicon: ✍\ndate: "2026-11-07"\nmood: \n---\n\n')
     _write(root, "Notes/Journal/2026-11-08.md", "---\nicon: ✍\n---\n散歩した\n")
     return root
 
@@ -88,8 +88,11 @@ class TestChooseNudge:
 class TestComposeCheckin:
     def _settings(self, tmp_path: Path, vault_dir: Path | None) -> Settings:
         return Settings(
-            line_channel_secret="s", line_channel_access_token="t", storage_dir=tmp_path / "data",
-            owner_user_id="U1", vault_dir=vault_dir,
+            line_channel_secret="s",
+            line_channel_access_token="t",
+            storage_dir=tmp_path / "data",
+            owner_user_id="U1",
+            vault_dir=vault_dir,
         )
 
     def test_full_multiline_prompt_with_nudge(self, tmp_path: Path, vault: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ProcessError,
 
 if TYPE_CHECKING:
     from ai_journaling_agent.core.user_profile import UserProfile
+    from ai_journaling_agent.core.vault_tools import VaultContext
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,12 @@ SYSTEM_PROMPT = """あなたはジャーナリングパートナーです。ユ�
 class AiResponder:
     """Generate AI responses using claude-agent-sdk with session continuity."""
 
-    def __init__(self, storage_dir: Path) -> None:
+    def __init__(
+        self,
+        storage_dir: Path,
+        vault_context: Callable[[str], VaultContext | None] | None = None,
+    ) -> None:
+        self._vault_context = vault_context
         self._sessions_dir = storage_dir / "sessions"
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
 
@@ -68,9 +75,10 @@ class AiResponder:
         text, new_sid = "", None
         async for msg in query(prompt=prompt, options=options):
             if isinstance(msg, AssistantMessage):
-                for block in msg.content:
-                    if isinstance(block, TextBlock):
-                        text += block.text
+                # With tools, several assistant turns may occur; reply with the last one that has text.
+                turn = "".join(block.text for block in msg.content if isinstance(block, TextBlock))
+                if turn.strip():
+                    text = turn
             elif isinstance(msg, ResultMessage):
                 new_sid = msg.session_id
         return text, new_sid
@@ -99,12 +107,23 @@ class AiResponder:
             if parts:
                 system_prompt = SYSTEM_PROMPT + "\n\n【このユーザーについて】\n" + "\n".join(parts)
         session_id = self._load_session_id(user_id)
+        # Built-in tools (file access, shell, web) are always disabled: the agent talks to
+        # an internet-facing chat. The only tools it may get are the narrow vault tools.
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
             resume=session_id,
             max_turns=1,
+            tools=[],
             allowed_tools=[],
         )
+        ctx = self._vault_context(user_id) if self._vault_context else None
+        if ctx is not None:
+            from ai_journaling_agent.core.vault_tools import TOOL_NAMES, build_vault_server
+
+            options.system_prompt = system_prompt + ctx.system_prompt()
+            options.mcp_servers = {"vault": build_vault_server(ctx)}
+            options.allowed_tools = list(TOOL_NAMES)
+            options.max_turns = 5
         try:
             text, new_sid = await self._run_query(prompt, options)
         except ProcessError:

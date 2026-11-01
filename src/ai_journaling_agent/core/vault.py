@@ -32,7 +32,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
         key, sep, value = line.partition(":")
         if sep:
             fields[key.strip()] = value.strip().strip('"').strip("'")
-    return fields, text[m.end():]
+    return fields, text[m.end() :]
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -95,3 +95,7 @@ class VaultReader:
                 name = m.group(1).strip()
                 latest[name] = max(latest[name], d)
         return sorted((BookActivity(n, d) for n, d in latest.items()), key=lambda b: (b.last_date, b.name))
+
+    def sources(self) -> dict[str, str]:
+        """Names of book (📘) and paper (🎓) source notes, mapped to their icon."""
+        return {path.stem: fields["icon"] for path, fields, _ in self._notes() if fields.get("icon") in ("📘", "🎓")}
