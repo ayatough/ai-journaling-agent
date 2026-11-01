@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [dependency-groups]

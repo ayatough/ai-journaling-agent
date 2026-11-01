@@ -36,6 +36,13 @@ class TestSettingsDefaults:
         settings = Settings()  # type: ignore[call-arg]
         assert settings.port == 8000
 
+    def test_default_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
+        monkeypatch.delenv("HOST", raising=False)
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.host == "0.0.0.0"
+
     def test_default_storage_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
         monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
@@ -45,6 +52,13 @@ class TestSettingsDefaults:
 
 class TestSettingsOverride:
     """Environment variables override defaults."""
+
+    def test_override_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.host == "127.0.0.1"
 
     def test_override_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
