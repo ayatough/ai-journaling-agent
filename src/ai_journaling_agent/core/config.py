@@ -21,5 +21,6 @@ class Settings(BaseSettings):
     line_channel_secret: str
     line_channel_access_token: str
     storage_dir: Path = Field(default=Path.home() / ".ai-journaling-agent" / "data")
+    host: str = "0.0.0.0"
     port: int = 8000
     owner_user_id: str = ""
