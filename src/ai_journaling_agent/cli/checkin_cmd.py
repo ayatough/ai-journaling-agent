@@ -15,15 +15,14 @@ from ai_journaling_agent.core.vault import VaultReader
 JST = ZoneInfo("Asia/Tokyo")
 
 
-def compose_checkin(
+def plan_checkin(
     tracker: CheckInTracker, settings: Settings, now: datetime
-) -> tuple[str, str, str | None] | None:
-    """Return ``(kind, message, nudge_key)`` for the check-in due now, or None."""
+) -> tuple[str, str, str | None, str | None] | None:
+    """Return ``(kind, template_prompt, nudge_key, nudge_text)`` for the check-in due now, or None."""
     due = tracker.next_checkin(now)
     if due is None:
         return None
     kind, prompt = due
-    nudge_key: str | None = None
     if settings.vault_dir and settings.vault_dir.is_dir():
         diary_on, books_on = tracker.nudge_history()
         try:
@@ -32,9 +31,37 @@ def compose_checkin(
             print(f"Warning: could not read vault: {exc}", file=sys.stderr)
             nudge = None
         if nudge:
-            nudge_key, text = nudge
-            prompt = f"{prompt}\n\n{text}"
-    return kind, prompt, nudge_key
+            return kind, prompt, nudge[0], nudge[1]
+    return kind, prompt, None, None
+
+
+def compose_checkin(
+    tracker: CheckInTracker, settings: Settings, now: datetime
+) -> tuple[str, str, str | None] | None:
+    """Template version of the check-in: ``(kind, message, nudge_key)``. Used as fallback and for ``status``."""
+    plan = plan_checkin(tracker, settings, now)
+    if plan is None:
+        return None
+    kind, prompt, nudge_key, nudge_text = plan
+    return kind, f"{prompt}\n\n{nudge_text}" if nudge_text else prompt, nudge_key
+
+
+def write_checkin_with_ai(settings: Settings, kind: str, nudge_text: str | None, now: datetime) -> str:
+    """Have the agent write the check-in inside the ongoing conversation. Empty string on failure."""
+    import asyncio
+
+    from ai_journaling_agent.core.ai_responder import AiResponder
+    from ai_journaling_agent.core.user_profile import JsonUserProfileRepository
+
+    responder = AiResponder(settings.storage_dir, model=settings.claude_model)
+    profile = JsonUserProfileRepository(settings.storage_dir).get(settings.owner_user_id)
+    try:
+        return asyncio.run(
+            responder.compose_checkin(settings.owner_user_id, kind, hint=nudge_text, now=now, profile=profile)
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to the template
+        print(f"Warning: AI check-in failed, using template: {exc}", file=sys.stderr)
+        return ""
 
 
 def _push(settings: Settings, text: str) -> None:
@@ -84,24 +111,27 @@ def main(argv: list[str] | None = None) -> None:
             print("No check-in needed.")
 
     elif args.command == "run":
-        composed = compose_checkin(tracker, settings, now)
-        if composed is None:
+        plan = plan_checkin(tracker, settings, now)
+        if plan is None:
             print("No check-in needed.")
             return
-        kind, message, nudge_key = composed
+        kind, template, nudge_key, nudge_text = plan
+        fallback = f"{template}\n\n{nudge_text}" if nudge_text else template
         if args.dry_run:
-            print(f"[dry-run] {kind}\n{message}")
+            print(f"[dry-run] {kind} (template shown; the live run asks the agent to write it)\n{fallback}")
             return
         if not settings.owner_user_id:
             print("Error: OWNER_USER_ID is not set", file=sys.stderr)
             sys.exit(1)
+        message = write_checkin_with_ai(settings, kind, nudge_text, now) or fallback
         _push(settings, message)
         jst_today = now.astimezone(JST).date()
         tracker.record_checkin(kind, jst_today)
         tracker.record_sent_prompt(message, now)
         if nudge_key:
             tracker.record_nudge(nudge_key, jst_today)
-        print(f"Sent {kind} check-in{' with ' + nudge_key if nudge_key else ''}.")
+        source = "agent" if message != fallback else "template"
+        print(f"Sent {kind} check-in ({source}){' with ' + nudge_key if nudge_key else ''}.")
 
     elif args.command == "record":
         jst_today = now.astimezone(JST).date()

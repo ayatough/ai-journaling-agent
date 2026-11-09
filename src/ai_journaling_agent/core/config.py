@@ -25,3 +25,4 @@ class Settings(BaseSettings):
     port: int = 8000
     owner_user_id: str = ""
     vault_dir: Path | None = None
+    claude_model: str = "sonnet"

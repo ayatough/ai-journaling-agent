@@ -203,3 +203,64 @@ class TestGenerateResponse:
             result = await responder.generate_response("U1234", "テスト")
 
         assert result == "(応答なし)"
+
+
+class TestConversationContinuity:
+    """Check-ins and replies share one conversation; background jobs don't."""
+
+    async def test_reply_is_timestamped(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime
+
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        responder = AiResponder(storage_dir=tmp_path)
+        seen: list[str] = []
+
+        async def fake_run(prompt: str, options: object) -> tuple[str, str | None]:
+            seen.append(prompt)
+            return "ok", "sid-1"
+
+        with patch.object(AiResponder, "_run_query", side_effect=fake_run):
+            await responder.generate_response("U1", "こんにちは", now=datetime(2026, 11, 10, 10, 0, tzinfo=UTC))
+        assert seen == ["[2026-11-10(火) 19:00] こんにちは"]
+
+    async def test_checkin_is_written_in_the_same_session(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime
+
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        responder = AiResponder(storage_dir=tmp_path, model="sonnet")
+        (tmp_path / "sessions" / "U1.txt").write_text("sid-old")
+        calls: list[tuple[str, object]] = []
+
+        async def fake_run(prompt: str, options: object) -> tuple[str, str | None]:
+            calls.append((prompt, options))
+            return "昨日のパン、どうでした？", "sid-new"
+
+        with patch.object(AiResponder, "_run_query", side_effect=fake_run):
+            text = await responder.compose_checkin(
+                "U1", "morning", hint="日記が未記入", now=datetime(2026, 11, 9, 23, 0, tzinfo=UTC)
+            )
+        assert text == "昨日のパン、どうでした？"
+        prompt, options = calls[0]
+        assert prompt.startswith("[お知らせ 2026-11-10(火) 08:00]") and "日記が未記入" in prompt
+        assert options.resume == "sid-old"  # type: ignore[attr-defined]
+        assert options.model == "sonnet"  # type: ignore[attr-defined]
+        assert options.tools == []  # type: ignore[attr-defined]
+        assert (tmp_path / "sessions" / "U1.txt").read_text() == "sid-new"
+
+    async def test_complete_once_does_not_touch_session(self, tmp_path: Path) -> None:
+        from ai_journaling_agent.core.ai_responder import AiResponder
+
+        responder = AiResponder(storage_dir=tmp_path)
+        (tmp_path / "sessions" / "U1.txt").write_text("sid-keep")
+        captured: list[object] = []
+
+        async def fake_run(prompt: str, options: object) -> tuple[str, str | None]:
+            captured.append(options)
+            return "{}", "sid-other"
+
+        with patch.object(AiResponder, "_run_query", side_effect=fake_run):
+            await responder.complete_once("JSON を返して")
+        assert captured[0].resume is None  # type: ignore[attr-defined]
+        assert (tmp_path / "sessions" / "U1.txt").read_text() == "sid-keep"

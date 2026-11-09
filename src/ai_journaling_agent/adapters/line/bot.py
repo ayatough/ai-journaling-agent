@@ -67,8 +67,8 @@ async def _respond_to_user(
 ) -> None:
     """Background task: generate AI response and push to LINE."""
     profile = profile_repository.get(user_id)
-    checkin_prompt = checkin_tracker.get_recent_prompt()
-    response = await responder.generate_response(user_id, user_text, checkin_prompt=checkin_prompt, profile=profile)
+    # Check-ins are generated inside the same conversation (see checkin_cmd), so no wrapper is needed.
+    response = await responder.generate_response(user_id, user_text, profile=profile)
     configuration = Configuration(access_token=access_token)
     async with AsyncApiClient(configuration) as api_client:
         line_api = AsyncMessagingApi(api_client)
@@ -126,6 +126,7 @@ def create_app(settings: Settings) -> FastAPI:
     responder = AiResponder(
         storage_dir=settings.storage_dir,
         vault_context=_make_vault_context(settings, repository),
+        model=settings.claude_model,
     )
     checkin_tracker = CheckInTracker(settings.storage_dir)
     profile_repository = JsonUserProfileRepository(settings.storage_dir)
