@@ -1,4 +1,4 @@
-"""CLI for check-in status and recording."""
+"""CLI for check-in status, recording and sending."""
 
 from __future__ import annotations
 
@@ -9,8 +9,47 @@ from zoneinfo import ZoneInfo
 
 from ai_journaling_agent.core.checkin import CheckInTracker
 from ai_journaling_agent.core.config import Settings
+from ai_journaling_agent.core.nudge import choose_nudge
+from ai_journaling_agent.core.vault import VaultReader
 
 JST = ZoneInfo("Asia/Tokyo")
+
+
+def compose_checkin(
+    tracker: CheckInTracker, settings: Settings, now: datetime
+) -> tuple[str, str, str | None] | None:
+    """Return ``(kind, message, nudge_key)`` for the check-in due now, or None."""
+    due = tracker.next_checkin(now)
+    if due is None:
+        return None
+    kind, prompt = due
+    nudge_key: str | None = None
+    if settings.vault_dir and settings.vault_dir.is_dir():
+        diary_on, books_on = tracker.nudge_history()
+        try:
+            nudge = choose_nudge(kind, now.astimezone(JST).date(), VaultReader(settings.vault_dir), diary_on, books_on)
+        except OSError as exc:  # vault on an unavailable drive must not block the check-in
+            print(f"Warning: could not read vault: {exc}", file=sys.stderr)
+            nudge = None
+        if nudge:
+            nudge_key, text = nudge
+            prompt = f"{prompt}\n\n{text}"
+    return kind, prompt, nudge_key
+
+
+def _push(settings: Settings, text: str) -> None:
+    from linebot.v3.messaging import (  # type: ignore[import-untyped]
+        ApiClient,
+        Configuration,
+        MessagingApi,
+        PushMessageRequest,
+        TextMessage,
+    )
+
+    with ApiClient(Configuration(access_token=settings.line_channel_access_token)) as api_client:
+        MessagingApi(api_client).push_message(
+            PushMessageRequest(to=settings.owner_user_id, messages=[TextMessage(text=text)])
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -18,8 +57,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Check-in management")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    status_p = sub.add_parser("status", help="Check if a check-in is needed now")
+    status_p = sub.add_parser("status", help="Show the check-in that would be sent now (does not send)")
     status_p.add_argument("--now", default=None, help="Override current time (ISO 8601, e.g. 2026-01-06T09:00:00)")
+
+    run_p = sub.add_parser("run", help="Send the check-in due now to OWNER_USER_ID and record it")
+    run_p.add_argument("--now", default=None, help="Override current time (ISO 8601)")
+    run_p.add_argument("--dry-run", action="store_true", help="Print instead of sending/recording")
 
     record = sub.add_parser("record", help="Record that a check-in was sent")
     record.add_argument("--kind", required=True, choices=["morning", "midday", "evening", "night_summary"])
@@ -29,26 +72,36 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     settings = Settings()  # type: ignore[call-arg]
     tracker = CheckInTracker(settings.storage_dir)
-    _now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
-    now = _now
+    now = datetime.fromisoformat(args.now).replace(tzinfo=UTC) if args.now else datetime.now(tz=UTC)
 
     if args.command == "status":
-        prompt = tracker.needs_checkin(now)
-        if prompt:
-            jst_now = now.astimezone(JST)
-            hour = jst_now.hour
-            if hour < 10:
-                kind = "morning"
-            elif hour < 13:
-                kind = "midday"
-            elif hour < 21:
-                kind = "evening"
-            else:
-                kind = "night_summary"
+        composed = compose_checkin(tracker, settings, now)
+        if composed:
+            kind, message, _ = composed
             print(f"{kind} check-in needed")
-            print(f"Prompt: {prompt}")
+            print(f"Prompt: {message}")
         else:
             print("No check-in needed.")
+
+    elif args.command == "run":
+        composed = compose_checkin(tracker, settings, now)
+        if composed is None:
+            print("No check-in needed.")
+            return
+        kind, message, nudge_key = composed
+        if args.dry_run:
+            print(f"[dry-run] {kind}\n{message}")
+            return
+        if not settings.owner_user_id:
+            print("Error: OWNER_USER_ID is not set", file=sys.stderr)
+            sys.exit(1)
+        _push(settings, message)
+        jst_today = now.astimezone(JST).date()
+        tracker.record_checkin(kind, jst_today)
+        tracker.record_sent_prompt(message, now)
+        if nudge_key:
+            tracker.record_nudge(nudge_key, jst_today)
+        print(f"Sent {kind} check-in{' with ' + nudge_key if nudge_key else ''}.")
 
     elif args.command == "record":
         jst_today = now.astimezone(JST).date()

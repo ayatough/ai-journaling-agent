@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore[import-untyped]
@@ -33,6 +35,7 @@ from ai_journaling_agent.core.inbox import JsonInboxRepository
 from ai_journaling_agent.core.repository import JsonJournalRepository
 from ai_journaling_agent.core.user import JsonUserRepository
 from ai_journaling_agent.core.user_profile import JsonUserProfileRepository, UserProfile
+from ai_journaling_agent.core.vault_tools import VaultContext
 
 PROFILE_UPDATE_INTERVAL = 5
 
@@ -85,6 +88,32 @@ async def _respond_to_user(
     profile_repository.save(profile)
 
 
+def _make_vault_context(
+    settings: Settings, repository: JsonJournalRepository
+) -> Callable[[str], VaultContext | None] | None:
+    """Vault tools are enabled only when VAULT_DIR points to an existing folder."""
+    vault_dir = settings.vault_dir
+    if vault_dir is None:
+        return None
+
+    def factory(user_id: str) -> VaultContext | None:
+        if not vault_dir.is_dir():
+            logger.warning("VAULT_DIR %s is not available; vault tools disabled for this reply", vault_dir)
+            return None
+
+        def recent_user_texts() -> list[str]:
+            since = datetime.now(tz=UTC) - timedelta(hours=24)
+            return [
+                e.summary or e.emoji or ""
+                for e in repository.list_entries(user_id)
+                if (e.timestamp if e.timestamp.tzinfo else e.timestamp.replace(tzinfo=UTC)) >= since
+            ]
+
+        return VaultContext(vault_dir=vault_dir, recent_user_texts=recent_user_texts)
+
+    return factory
+
+
 def create_app(settings: Settings) -> FastAPI:
     """Create a FastAPI application wired with LINE webhook handling."""
     app = FastAPI()
@@ -96,6 +125,7 @@ def create_app(settings: Settings) -> FastAPI:
     inbox_repository = JsonInboxRepository(settings.storage_dir)
     responder = AiResponder(
         storage_dir=settings.storage_dir,
+        vault_context=_make_vault_context(settings, repository),
     )
     checkin_tracker = CheckInTracker(settings.storage_dir)
     profile_repository = JsonUserProfileRepository(settings.storage_dir)
