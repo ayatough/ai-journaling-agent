@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ai_journaling_agent.core.user_profile import UserProfile
+
+if TYPE_CHECKING:
+    from ai_journaling_agent.core.ai_responder import AiResponder
 
 _EXTRACT_PROMPT = """以下のユーザーメッセージを読んで、このユーザーの特徴を抽出してください。
 
@@ -25,15 +29,14 @@ JSONのみ返してください。説明不要。"""
 async def extract_profile_updates(
     user_text: str,
     existing_profile: UserProfile,
-    ai_responder: AiResponder,  # noqa: F821
+    ai_responder: AiResponder,
 ) -> UserProfile:
-    """Extract profile info from user_text and merge into existing_profile."""
-    from ai_journaling_agent.core.ai_responder import AiResponder  # noqa: F401 (type hint)
+    """Extract profile info from user_text and merge into existing_profile.
 
+    Runs as a one-off query so it never appears in the user's conversation.
+    """
     prompt = _EXTRACT_PROMPT.format(user_text=user_text)
-    raw = await ai_responder.generate_response(
-        existing_profile.user_id, prompt
-    )
+    raw = await ai_responder.complete_once(prompt)
 
     try:
         # Extract JSON from response

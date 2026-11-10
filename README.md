@@ -34,6 +34,7 @@ OWNER_USER_ID=your-line-user-id
 | `STORAGE_DIR` | No | データ保存先 (デフォルト: `~/.ai-journaling-agent/data`) |
 | `HOST` | No | 待受アドレス (デフォルト: `0.0.0.0`。Windows 起動スクリプトでは `127.0.0.1`) |
 | `PORT` | No | Webhookサーバーのポート (デフォルト: `8000`) |
+| `CLAUDE_MODEL` | No | 応答に使うモデル (デフォルト: `sonnet` = その時点の最新 Sonnet。`opus` も可) |
 | `VAULT_DIR` | No | Obsidian vault のパス。設定するとチェックインに促しを添える（夜：日記が未記入なら / 土日の朝：しばらく開いていない本）。vault は読むだけ |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Windows 運用時 | `claude setup-token` で発行した長期トークン |
 | `NGROK_DOMAIN` | Windows 運用時 | ngrok の固定ドメイン |

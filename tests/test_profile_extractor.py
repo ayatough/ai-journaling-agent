@@ -23,7 +23,7 @@ class TestExtractProfileUpdates:
         )
 
         mock_responder = AsyncMock(spec=AiResponder)
-        mock_responder.generate_response.return_value = (
+        mock_responder.complete_once.return_value = (
             '{"interests": ["料理", "読書"], "recurring_themes": ["健康"], "communication_style": "丁寧"}'
         )
 
@@ -46,7 +46,7 @@ class TestExtractProfileUpdates:
         )
 
         mock_responder = AsyncMock(spec=AiResponder)
-        mock_responder.generate_response.return_value = "申し訳ありませんが、処理できませんでした。"
+        mock_responder.complete_once.return_value = "申し訳ありませんが、処理できませんでした。"
 
         result = await extract_profile_updates("テスト", existing, mock_responder)
 
@@ -65,7 +65,7 @@ class TestExtractProfileUpdates:
         )
 
         mock_responder = AsyncMock(spec=AiResponder)
-        mock_responder.generate_response.return_value = (
+        mock_responder.complete_once.return_value = (
             '{"interests": [], "recurring_themes": [], "communication_style": ""}'
         )
 
@@ -87,7 +87,7 @@ class TestExtractProfileUpdates:
         )
 
         mock_responder = AsyncMock(spec=AiResponder)
-        mock_responder.generate_response.return_value = (
+        mock_responder.complete_once.return_value = (
             '{"interests": ["音楽", "スポーツ"], "recurring_themes": ["健康"], "communication_style": ""}'
         )
 
@@ -104,7 +104,7 @@ class TestExtractProfileUpdates:
         existing = UserProfile(user_id="U1234", updated_at=None)
 
         mock_responder = AsyncMock(spec=AiResponder)
-        mock_responder.generate_response.return_value = (
+        mock_responder.complete_once.return_value = (
             '{"interests": ["映画"], "recurring_themes": [], "communication_style": ""}'
         )
 
