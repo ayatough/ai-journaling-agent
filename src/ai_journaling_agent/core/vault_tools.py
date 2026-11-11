@@ -22,22 +22,35 @@ from ai_journaling_agent.core.vault_writer import VaultWriteError, VaultWriter
 
 JST = ZoneInfo("Asia/Tokyo")
 SERVER_NAME = "vault"
-TOOL_NAMES = [f"mcp__{SERVER_NAME}__save_memo", f"mcp__{SERVER_NAME}__fill_daily_note"]
+TOOL_NAMES = [f"mcp__{SERVER_NAME}__{n}" for n in ("save_memo", "fill_daily_note", "set_photo_source")]
 
 VAULT_PROMPT = """
 
-## Obsidian へのメモ（秘書として）
-ユーザーは Obsidian で「1ノート = 1トピック」の小さなメモを書き、リンクでつなげています。
-- 勉強・読書・数学・アイデアの話が出たら、1〜2個の短い質問で「一番残したい一点」と、それについて思ったことを引き出す
-- 論文はユーザーが話題にしたときだけ扱う。こちらから論文を勧めない
-- 残せそうになったら「メモに残しますか？」と確認し、ユーザーが肯定したときだけ save_memo を呼ぶ。勝手に保存しない
-- 1メモ = 1トピック。話題が2つあれば、別々に確認して別々に保存する
+## Obsidian への保存（頼まれたときだけ）
+ユーザーは Obsidian に「1ノート = 1トピック」の断片を残しています。メモは義務ではありません。
+- ユーザーが「残して」「メモして」など保存を頼んだときだけ save_memo を呼ぶ。
+  こちらから「メモに残しますか？」と提案しない
+- 一行・引用だけの断片で十分。保存のために質問して話を膨らませない
 - body はユーザーの発言をそのまま使う。要約・清書・誤字の修正・言い換えをしない。関係する発言を選んで並べるのはよい
+- 話題が2つあれば別々のメモにする
 - title はそのトピックを表す短い名前。できるだけユーザーの言葉から取る
 - source は下の一覧にある本・論文の名前と一致するときだけ指定する
 - 保存したら「Inbox に『(title)』として残しました」と一文で伝える
-- 体調・気分・良かったことが聞けたら fill_daily_note で今日のデイリーノートに記入してよい
-  （空欄にだけ入る）。そのことを一言伝える
+- 体調・気分を数字で言ってくれたら fill_daily_note の condition / mood に入れてよい。
+  良かったことを話してくれたら good にその発言をそのまま（一部の抜き出しは可）入れてよい。記入したことは一言伝える
+
+## 写真
+- ユーザーが送った写真は自動で vault の Attachments/ に保存される（「（写真を送りました: ファイル名）」として届く）。
+  あなたには画像の中身は見えない。受け取ったことを短く伝えるだけでよく、説明を求めない
+- どの本・論文のページかをユーザーが話したら、set_photo_source でその写真と本を結び付ける（一覧にある名前のときだけ）
+
+## 読了インタビュー（ユーザーが本を読み終えたと言ったときだけ）
+- 一度だけ「読了おめでとうございます。よければ2〜3問だけ聞いて、答えをそのまま本のメモにしましょうか？」と聞く。
+  断られたり、話題が変わったりしたらやめる。二度は聞かない
+- 了承されたら一問ずつ聞く（例: 印象に残ったところ / 自分に引きつけて思ったこと / 読む前と変わったこと）。
+  了承をもって保存の同意とみなし、答えが返るたびにその答えを原文のまま save_memo で保存する
+  （source にその本、title は答えの要点を短く。1問1メモ）。保存したことは短く伝えて次の問いへ。3問で終える
+- 答えにくそうな問いはスキップする。感想の深掘りや追加の質問はしない
 """
 
 
@@ -134,14 +147,17 @@ def build_vault_server(ctx: VaultContext) -> McpSdkServerConfig:
     @tool(
         "fill_daily_note",
         "今日のデイリーノートの frontmatter の空欄"
-        "（condition 体調1-5 / mood 気分1-5 / good 良かったこと一言）を埋める。"
+        "（condition 体調1-5 / mood 気分1-5 / good 良かったこと＝発言の原文）を埋める。"
         "本文には触れない。既に値がある項目は変更されない。",
         {
             "type": "object",
             "properties": {
                 "condition": {"type": "integer", "minimum": 1, "maximum": 5},
                 "mood": {"type": "integer", "minimum": 1, "maximum": 5},
-                "good": {"type": "string", "description": "ユーザーが話した今日良かったことを一言で"},
+                "good": {
+                    "type": "string",
+                    "description": "ユーザーが話した良かったこと。発言をそのまま（抜き出し可、言い換え不可）",
+                },
             },
         },
     )
@@ -151,8 +167,12 @@ def build_vault_server(ctx: VaultContext) -> McpSdkServerConfig:
             v = args.get(key)
             if isinstance(v, int) and 1 <= v <= 5:
                 values[key] = str(v)
-        if isinstance(args.get("good"), str):
-            values["good"] = args["good"]
+        good = args.get("good")
+        if isinstance(good, str) and good.strip():
+            if "\n" in good.strip() or not body_is_verbatim(good, ctx.recent_user_texts()):
+                msg = "記入しませんでした: good はユーザーの発言をそのまま一行で使ってください（言い換え不可）"
+                return _text(msg, True)
+            values["good"] = good.strip()
         now = ctx.now()
         try:
             written = writer.fill_daily_fields(now, values)
@@ -164,4 +184,26 @@ def build_vault_server(ctx: VaultContext) -> McpSdkServerConfig:
         writer.append_relay(now, f"デイリーノート [[{now:%Y-%m-%d}]] に {fields} を記入 — 確認のみ")
         return _text(f"今日のデイリーノートに {fields} を記入しました")
 
-    return create_sdk_mcp_server(SERVER_NAME, tools=[save_memo, fill_daily_note])
+    @tool(
+        "set_photo_source",
+        "LINE で受け取った写真（Attachments/ のファイル名）が、どの本・論文のページかを整理役に伝える。",
+        {
+            "type": "object",
+            "properties": {
+                "file_name": {"type": "string", "description": "例: LINE_20261111_093000.jpg"},
+                "source": {"type": "string", "description": "既存の本・論文の名前"},
+            },
+            "required": ["file_name", "source"],
+        },
+    )
+    async def set_photo_source(args: dict[str, Any]) -> dict[str, Any]:
+        name = Path(str(args.get("file_name", ""))).name
+        source = str(args.get("source", "")).strip()
+        if not name or not (ctx.vault_dir / "Attachments" / name).is_file():
+            return _text("その写真は Attachments/ にありません", True)
+        if source not in ctx.source_names():
+            return _text("その名前の本・論文は vault にありません", True)
+        writer.append_relay(ctx.now(), f"写真 [[{name}]] の source: [[{source}]]（ユーザーが LINE で伝えた）")
+        return _text(f"{name} を『{source}』のページとして整理役に伝えました")
+
+    return create_sdk_mcp_server(SERVER_NAME, tools=[save_memo, fill_daily_note, set_photo_source])

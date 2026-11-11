@@ -132,6 +132,34 @@ class TestTools:
         assert "存在しない本" in (tools / RELAY_PATH).read_text(encoding="utf-8")
 
     def test_fill_daily_note(self, tools: Path) -> None:
-        res = asyncio.run(_HANDLERS["fill_daily_note"]({"mood": 4, "condition": 9, "good": "散歩"}))
+        res = asyncio.run(_HANDLERS["fill_daily_note"]({"mood": 4, "condition": 9, "good": "良い一日だった"}))
         assert "mood=4" in res["content"][0]["text"] and "condition" not in res["content"][0]["text"]
         assert "mood: 4" in (tools / "Notes" / "Journal" / "2026-11-07.md").read_text(encoding="utf-8")
+
+    def test_good_must_be_users_words(self, tools: Path) -> None:
+        res = asyncio.run(_HANDLERS["fill_daily_note"]({"good": "充実した一日"}))
+        assert res.get("is_error") is True
+        assert not (tools / "Notes" / "Journal" / "2026-11-07.md").exists()
+
+
+class TestAttachments:
+    def test_saves_jpeg_without_overwrite(self, vault: Path) -> None:
+        w = VaultWriter(vault)
+        jpg = b"\xff\xd8\xff\xe0" + b"0" * 10
+        first = w.save_attachment(jpg, NOW)
+        second = w.save_attachment(jpg, NOW)
+        assert first.name == "LINE_20261107_140500.jpg"
+        assert second.name == "LINE_20261107_140500_2.jpg"
+        assert first.read_bytes() == jpg
+
+    def test_rejects_unknown_format(self, vault: Path) -> None:
+        with pytest.raises(VaultWriteError):
+            VaultWriter(vault).save_attachment(b"GIF89a", NOW)
+
+    def test_set_photo_source_tool(self, tools: Path) -> None:
+        name = VaultWriter(tools).save_attachment(b"\xff\xd8\xff" + b"x", NOW).name
+        ok = asyncio.run(_HANDLERS["set_photo_source"]({"file_name": name, "source": "真説 老子"}))
+        assert "is_error" not in ok
+        assert f"写真 [[{name}]] の source: [[真説 老子]]" in (tools / RELAY_PATH).read_text(encoding="utf-8")
+        bad = asyncio.run(_HANDLERS["set_photo_source"]({"file_name": name, "source": "無い本"}))
+        assert bad.get("is_error") is True

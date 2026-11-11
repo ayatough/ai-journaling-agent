@@ -36,7 +36,7 @@ flowchart TB
     checkin --> data
     checkin -. "同じセッションで文面作成" .-> responder
     checkin -- "push" --> line
-    line -- "返信・促し" --> user
+    line -- "返信・チェックイン" --> user
 ```
 
 ## メッセージ 1 通の流れ
@@ -85,8 +85,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     line(["LINE"]) <--> agent["journal agent<br/>（webhook・チェックイン）"]
-    agent -- "読む：日記・読書の状況" --> vault
-    agent -- "追記：学びメモ・frontmatter" --> inbox
+        agent -- "追記：学びメモ・frontmatter" --> inbox
     agent -- "追記" --> relay
     subgraph vault["Obsidian vault"]
         inbox["Inbox/"]
@@ -99,6 +98,6 @@ flowchart LR
     you(["あなた（Obsidian）"]) -- "確認・編集" --> vault
 ```
 
-- **journal agent（LINE）**：記録の入口。✅ 実装済み：`VAULT_DIR` を設定するとチェックインに促しを添える（夜：日記が未記入なら / 土日の朝：しばらく開いていない本。論文は会話で話題になったときだけ）。会話から学びメモを `Inbox/` に追記し、デイリーノートの frontmatter を埋める。本文はユーザーの言葉のまま。
+- **journal agent（LINE）**：記録の入口。メモは義務ではなく、催促はしない（日記・読書の促しは 2026-11-11 に廃止）。ユーザーが「残して」と頼んだときだけ、発言そのままの学びメモを `Inbox/` に作り、デイリーノートの空欄（`good` は発言の原文のみ）を埋める。送った写真は `Attachments/` に保存（サイドカーは整理役）。本を読み終えたと言ったときだけ、了承を得て2〜3問の読了インタビューをし、答えを原文のままメモにする。前週の `AI/週次 YYYY-Www.md` ができていれば、次のチェックインで2〜3点を紹介する。
 - **引き継ぎメモ**：`Claude/LINE引き継ぎ.md` に journal agent が追記するチェックリスト。
 - **Cowork**：スケジュールタスクで引き継ぎメモを処理し、Inbox → Notes の整理を行う。破壊的操作は確認待ちとしてメモに残す。
