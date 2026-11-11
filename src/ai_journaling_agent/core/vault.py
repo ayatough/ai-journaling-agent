@@ -99,3 +99,11 @@ class VaultReader:
     def sources(self) -> dict[str, str]:
         """Names of book (📘) and paper (🎓) source notes, mapped to their icon."""
         return {path.stem: fields["icon"] for path, fields, _ in self._notes() if fields.get("icon") in ("📘", "🎓")}
+
+    def weekly_digest(self, iso_year: int, iso_week: int) -> str | None:
+        """Body of ``AI/週次 YYYY-Www.md`` written by the vault organizer, or None if not there yet."""
+        path = self._root / "AI" / f"週次 {iso_year}-W{iso_week:02d}.md"
+        if not path.exists():
+            return None
+        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        return body.strip() or None

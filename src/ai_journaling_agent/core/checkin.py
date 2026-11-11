@@ -70,19 +70,12 @@ class CheckInTracker:
         due = self.next_checkin(now)
         return due[1] if due else None
 
-    def nudge_history(self) -> tuple[str | None, dict[str, str]]:
-        """Return (date the diary nudge was last sent, {book name: date last nudged})."""
-        data = self._load()
-        books = {k.removeprefix("nudged_book:"): v for k, v in data.items() if k.startswith("nudged_book:")}
-        return data.get("last_diary_nudge"), books
+    def digest_delivered(self, week_key: str) -> bool:
+        return self._load().get("last_digest_week") == week_key
 
-    def record_nudge(self, nudge_key: str, today: date) -> None:
-        """Record a vault nudge (``"diary"`` or ``"book:<name>"``)."""
+    def record_digest(self, week_key: str) -> None:
         data = self._load()
-        if nudge_key == "diary":
-            data["last_diary_nudge"] = today.isoformat()
-        elif nudge_key.startswith("book:"):
-            data["nudged_book:" + nudge_key.removeprefix("book:")] = today.isoformat()
+        data["last_digest_week"] = week_key
         self._save(data)
 
     def record_checkin(self, kind: str, today: date) -> None:

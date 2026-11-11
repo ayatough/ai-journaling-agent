@@ -35,7 +35,7 @@ OWNER_USER_ID=your-line-user-id
 | `HOST` | No | 待受アドレス (デフォルト: `0.0.0.0`。Windows 起動スクリプトでは `127.0.0.1`) |
 | `PORT` | No | Webhookサーバーのポート (デフォルト: `8000`) |
 | `CLAUDE_MODEL` | No | 応答に使うモデル (デフォルト: `sonnet` = その時点の最新 Sonnet。`opus` も可) |
-| `VAULT_DIR` | No | Obsidian vault のパス。設定するとチェックインに促しを添える（夜：日記が未記入なら / 土日の朝：しばらく開いていない本）。vault は読むだけ |
+| `VAULT_DIR` | No | Obsidian vault のパス。設定すると、頼まれたときだけ会話からメモを Inbox に保存・デイリーノートの空欄を記入、送った写真を `Attachments/` に保存、読了インタビュー、前週の週次ダイジェストをチェックインで紹介。催促はしない |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Windows 運用時 | `claude setup-token` で発行した長期トークン |
 | `NGROK_DOMAIN` | Windows 運用時 | ngrok の固定ドメイン |
 
@@ -76,7 +76,7 @@ AI の応答は webhook 内で即時に生成されるため（ADR-0004）、Cla
 | `uv run inbox mark-read <id>` | メッセージを処理済みにする |
 | `uv run push-line --text "..."` | LINE pushメッセージを送信 |
 | `uv run journal-history --days 3` | 直近のジャーナルエントリを表示 |
-| `uv run checkin status` | 今送るチェックイン（促しを含む）を表示 |
+| `uv run checkin status` | 今送るチェックインの種類と定型文を表示 |
 | `uv run checkin run [--dry-run]` | 必要ならチェックインを送信して記録 |
 | `uv run checkin record --kind morning` | チェックイン送信を記録 |
 

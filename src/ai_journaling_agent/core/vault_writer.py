@@ -4,6 +4,7 @@ What the journal agent may write (agreed with the user; see the vault's CLAUDE.m
 - a new memo in ``Inbox/`` whose body is the user's own words, verbatim
 - empty ``condition`` / ``mood`` / ``good`` fields of today's daily note (frontmatter only)
 - an append-only checklist line in ``Claude/LINE引き継ぎ.md`` for the Cowork organizer
+- a photo the user sent on LINE, saved as a new file in ``Attachments/``
 
 It never overwrites, renames, moves or deletes anything, and never touches a note body.
 """
@@ -73,6 +74,27 @@ class VaultWriter:
         content = "\n".join(lines) + "\n" + body.strip("\n") + "\n"
         with path.open("x", encoding="utf-8", newline="\n") as f:  # "x": fail if it appeared meanwhile
             f.write(content)
+        return path
+
+    # --- attachments --------------------------------------------------------
+    def save_attachment(self, data: bytes, now: datetime) -> Path:
+        """Save a photo as ``Attachments/LINE_YYYYMMDD_HHMMSS.<ext>`` (never overwrites)."""
+        if data[:3] == b"\xff\xd8\xff":
+            ext = "jpg"
+        elif data[:8] == b"\x89PNG\r\n\x1a\n":
+            ext = "png"
+        else:
+            raise VaultWriteError("画像形式を判別できませんでした")
+        folder = self._root / "Attachments"
+        folder.mkdir(exist_ok=True)
+        stem = f"LINE_{now:%Y%m%d_%H%M%S}"
+        path = folder / f"{stem}.{ext}"
+        n = 2
+        while path.exists():
+            path = folder / f"{stem}_{n}.{ext}"
+            n += 1
+        with path.open("xb") as f:
+            f.write(data)
         return path
 
     # --- daily note ---------------------------------------------------------

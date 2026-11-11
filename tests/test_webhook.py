@@ -254,3 +254,46 @@ class TestOwnerOnly:
         assert status == 200
         assert JsonJournalRepository(tmp_path).list_entries("U9999") == []
         assert [e.summary for e in JsonJournalRepository(tmp_path).list_entries(OWNER)] == ["本物"]
+
+
+class TestPhotoMessage:
+    """Photos from the owner are saved into the vault's Attachments/ and passed to the conversation."""
+
+    def test_photo_saved_to_vault(self, tmp_path: Path) -> None:
+        from linebot.v3.webhooks import ImageMessageContent  # type: ignore[import-untyped]
+
+        from ai_journaling_agent.adapters.line.bot import create_app
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        settings = Settings(
+            line_channel_secret="s", line_channel_access_token="t", storage_dir=tmp_path / "data",
+            owner_user_id=OWNER, vault_dir=vault,
+        )
+        event = MagicMock(spec=MessageEvent)
+        event.source = MagicMock(spec=Source)
+        event.source.user_id = OWNER
+        event.message = MagicMock(spec=ImageMessageContent)
+        event.message.id = "m1"
+        jpg = b"\xff\xd8\xff\xe0data"
+        with (
+            patch("ai_journaling_agent.adapters.line.bot.WebhookParser") as parser_cls,
+            patch("ai_journaling_agent.adapters.line.bot.AiResponder"),
+            patch("ai_journaling_agent.adapters.line.bot._respond_to_user") as respond,
+            patch("ai_journaling_agent.adapters.line.bot.AsyncApiClient") as client_cls,
+            patch("ai_journaling_agent.adapters.line.bot.AsyncMessagingApi"),
+            patch("ai_journaling_agent.adapters.line.bot.AsyncMessagingApiBlob") as blob_cls,
+        ):
+            parser_cls.return_value.parse.return_value = [event]
+            ctx = AsyncMock()
+            ctx.__aenter__.return_value = AsyncMock()
+            client_cls.return_value = ctx
+            blob_cls.return_value.get_message_content = AsyncMock(return_value=bytearray(jpg))
+            client = TestClient(create_app(settings))
+            response = client.post("/callback", content=b"{}", headers={"X-Line-Signature": "v"})
+
+        assert response.status_code == 200
+        saved = list((vault / "Attachments").iterdir())
+        assert len(saved) == 1 and saved[0].read_bytes() == jpg
+        assert f"[[{saved[0].name}]]" in (vault / "Claude" / "LINE引き継ぎ.md").read_text(encoding="utf-8")
+        assert saved[0].name in respond.call_args.kwargs["user_text"]

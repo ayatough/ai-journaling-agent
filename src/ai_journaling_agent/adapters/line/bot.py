@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore[import-untyped]
 from linebot.v3.messaging import (  # type: ignore[import-untyped]
     AsyncApiClient,
     AsyncMessagingApi,
+    AsyncMessagingApiBlob,
     Configuration,
     PushMessageRequest,
     TextMessage,
@@ -18,6 +20,7 @@ from linebot.v3.messaging import (  # type: ignore[import-untyped]
 from linebot.v3.webhook import WebhookParser  # type: ignore[import-untyped]
 from linebot.v3.webhooks import (  # type: ignore[import-untyped]
     FollowEvent,
+    ImageMessageContent,
     MessageEvent,
     TextMessageContent,
     UnfollowEvent,
@@ -32,6 +35,7 @@ from ai_journaling_agent.core.ai_responder import AiResponder
 from ai_journaling_agent.core.checkin import CheckInTracker
 from ai_journaling_agent.core.config import Settings
 from ai_journaling_agent.core.inbox import JsonInboxRepository
+from ai_journaling_agent.core.journal import EntryLevel, JournalEntry
 from ai_journaling_agent.core.repository import JsonJournalRepository
 from ai_journaling_agent.core.user import JsonUserRepository
 from ai_journaling_agent.core.user_profile import JsonUserProfileRepository, UserProfile
@@ -40,6 +44,7 @@ from ai_journaling_agent.core.vault_tools import VaultContext
 PROFILE_UPDATE_INTERVAL = 5
 
 logger = logging.getLogger(__name__)
+JST = ZoneInfo("Asia/Tokyo")
 
 
 def is_owner_event(event: object, owner_user_id: str) -> bool:
@@ -86,6 +91,34 @@ async def _respond_to_user(
         from ai_journaling_agent.core.profile_extractor import extract_profile_updates
         profile = await extract_profile_updates(user_text, profile, responder)
     profile_repository.save(profile)
+
+
+async def _save_photo(
+    message_id: str, settings: Settings, line_blob: AsyncMessagingApiBlob
+) -> tuple[str | None, str]:
+    """Download a LINE photo into the vault. Returns ``(file_name or None, text for the conversation)``."""
+    from ai_journaling_agent.core.vault_writer import VaultWriteError, VaultWriter
+
+    vault_dir = settings.vault_dir
+    if vault_dir is None:
+        return None, "（写真を送りました。保存先の vault が設定されていないため保存していません）"
+    data = bytes(await line_blob.get_message_content(message_id))
+    now = datetime.now(tz=JST)
+    if not vault_dir.is_dir():
+        fallback = settings.storage_dir / "photos"
+        fallback.mkdir(parents=True, exist_ok=True)
+        path = fallback / f"LINE_{now:%Y%m%d_%H%M%S}_{message_id}.jpg"
+        path.write_bytes(data)
+        logger.warning("VAULT_DIR unavailable; saved photo to %s", path)
+        return None, "（写真を送りました。vault に届かなかったため PC 内に一時保存しています）"
+    writer = VaultWriter(vault_dir)
+    try:
+        saved = writer.save_attachment(data, now)
+    except (VaultWriteError, OSError) as exc:
+        logger.warning("Could not save photo: %s", exc)
+        return None, "（写真を送りましたが、保存できませんでした）"
+    writer.append_relay(now, f"写真 [[{saved.name}]] を LINE で受信 — 🖼️ サイドカー作成")
+    return saved.name, f"（写真を送りました: {saved.name}。vault の Attachments/ に保存済み）"
 
 
 def _make_vault_context(
@@ -166,6 +199,26 @@ def create_app(settings: Settings) -> FastAPI:
                         _respond_to_user,
                         user_id=event.source.user_id,
                         user_text=event.message.text,
+                        responder=responder,
+                        access_token=settings.line_channel_access_token,
+                        checkin_tracker=checkin_tracker,
+                        profile_repository=profile_repository,
+                    )
+                elif isinstance(event, MessageEvent) and isinstance(event.message, ImageMessageContent):
+                    name, note = await _save_photo(event.message.id, settings, AsyncMessagingApiBlob(api_client))
+                    repository.save(
+                        event.source.user_id,
+                        JournalEntry(
+                            timestamp=datetime.now(tz=UTC),
+                            level=EntryLevel.SUMMARY,
+                            summary=note,
+                            photo_paths=[f"Attachments/{name}"] if name else [],
+                        ),
+                    )
+                    background_tasks.add_task(
+                        _respond_to_user,
+                        user_id=event.source.user_id,
+                        user_text=note,
                         responder=responder,
                         access_token=settings.line_channel_access_token,
                         checkin_tracker=checkin_tracker,
